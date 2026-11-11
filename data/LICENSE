@@ -1,0 +1,12 @@
+en.words, ru.words, uk.words, en.ngram, ru.ngram, uk.ngram
+
+Derived from the wordfreq 3.1.1 word lists by Robyn Speer (https://github.com/rspeer/wordfreq),
+which combine Wikipedia, OpenSubtitles 2018, SUBTLEX, NewsCrawl 2014, GlobalVoices,
+Google Books Ngrams 2012, OSCAR, Twitter and Reddit, by language.
+Licensed under Creative Commons Attribution-ShareAlike 4.0 International (CC BY-SA 4.0):
+https://creativecommons.org/licenses/by-sa/4.0/
+
+Changes: lower-cased, filtered to each language's letters, Russian «ё» folded into «е»,
+words ten times commoner in the other Cyrillic list dropped from each, the 100 000 commonest
+kept with log10 frequencies; character trigram statistics (Witten-Bell) computed from them.
+Built with build_model.py. This licence covers these data files only; the code is MIT.

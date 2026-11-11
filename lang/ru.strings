@@ -1,0 +1,17 @@
+"Copy" = "Скопировать";
+"GitHub" = "Гитхаб";
+"Herman Harazha" = "Герман Гаража";
+"Open at Login" = "Открывать при входе";
+"Quit" = "Завершить";
+"Check for Updates…" = "Проверить наличие обновлений…";
+"Exceptions" = "Исключения";
+"Edit…" = "Изменить…";
+"Words taken back by switching again or by ⌘Z are no longer fixed automatically. Return adds a word." = "Слова, возвращённые повторным переключением или ⌘Z, больше не исправляются сами. Return добавляет слово.";
+"Retype" = "Перепечатать";
+"Customize…" = "Настроить…";
+"Off" = "Выкл.";
+"Press keys now" = "Нажмите клавиши";
+"Press %@ Twice" = "Нажать клавишу %@ дважды";
+"Space" = "Пробел";
+"The language key (%@) also retypes the last word." = "Клавиша смены языка (%@) тоже перепечатывает последнее слово.";
+"The language key also retypes the last word." = "Клавиша смены языка тоже перепечатывает последнее слово.";

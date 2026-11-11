@@ -1,0 +1,135 @@
+#!/bin/zsh
+# Builds the app in this folder. Needs Xcode Command Line Tools, and full Xcode for the icon (actool, Icon Composer).
+# Same recipe as #HEX, OCR, STT, HoldQ: Sparkle for updates, Icon Composer for the icon.
+# NAME and ID override it for test builds under another name.
+set -e
+cd "${0:A:h}"
+# It changes per release, not per build.
+version=0.1 min=13.0 name=${NAME:-SourceKey} id=${ID:-com.geragaraza.sourcekey}
+app=$name.app
+tmp=$(mktemp -d); trap 'rm -rf $tmp' EXIT
+rm -rf "$app"
+mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
+
+# Updates: Sparkle, from its release, checked against a pinned checksum. Only what a non-sandboxed app
+# runs goes into the bundle: no XPC services (they serve sandboxed apps), no headers, Apple silicon only.
+sparkle=2.10.1 sparkle_sha=1a856d2a9edb8e628de88121d7be04cf0e2167f8641650b78fca00b14244cf27
+if [ ! -d vendor/Sparkle.framework ]; then
+  mkdir -p vendor $tmp/sparkle
+  curl -fsSL -o $tmp/sparkle.tar.xz https://github.com/sparkle-project/Sparkle/releases/download/$sparkle/Sparkle-$sparkle.tar.xz
+  [ "$(shasum -a 256 $tmp/sparkle.tar.xz | cut -d' ' -f1)" = $sparkle_sha ] || { echo "Sparkle checksum mismatch"; exit 1; }
+  tar -xf $tmp/sparkle.tar.xz -C $tmp/sparkle Sparkle.framework
+  ditto $tmp/sparkle/Sparkle.framework vendor/Sparkle.framework
+fi
+mkdir -p "$app/Contents/Frameworks"
+sp=$app/Contents/Frameworks/Sparkle.framework
+ditto vendor/Sparkle.framework "$sp"
+rm -rf "$sp"/{XPCServices,Headers,PrivateHeaders,Modules} "$sp"/Versions/B/{XPCServices,Headers,PrivateHeaders,Modules}
+for b in Sparkle Autoupdate Updater.app/Contents/MacOS/Updater; do
+  lipo "$sp/Versions/B/$b" -thin arm64 -output $tmp/thin && cp $tmp/thin "$sp/Versions/B/$b"
+done
+
+
+# An explicit minimum: by default swiftc targets this Mac's macOS version, and every older system
+# refuses to launch the result. Apple silicon only: Intel can't be tested on a Mac without Rosetta.
+# TRACE=1 makes a test build that reports every decision to stderr (core.swift, trace); never released.
+swiftc -O ${TRACE:+-DTRACE} -target arm64-apple-macos$min -F vendor -framework Sparkle -Xlinker -rpath -Xlinker @executable_path/../Frameworks \
+  -o "$app/Contents/MacOS/$name" main.swift core.swift manual.swift keyrow.swift detect.swift exceptions.swift window.swift updates.swift
+
+# The language data, lzfse-compressed (6.7 MB of text -> about 1.8 MB); detect.swift unpacks it at launch.
+cat > $tmp/pack.swift <<'SWIFT'
+import Foundation
+for p in CommandLine.arguments.dropFirst(2) {
+  let d = try! Data(contentsOf: URL(fileURLWithPath: p)) as NSData
+  try! (d.compressed(using: .lzfse) as Data).write(to: URL(fileURLWithPath: CommandLine.arguments[1] + "/" + (p as NSString).lastPathComponent + ".lzfse"))
+}
+SWIFT
+swiftc -O -o $tmp/pack $tmp/pack.swift
+mkdir -p "$app/Contents/Resources/data"
+$tmp/pack "$app/Contents/Resources/data" data/{en,ru,uk}.{words,ngram}
+cp data/LICENSE "$app/Contents/Resources/data/"
+
+# App icon, Apple's way (as in #HEX's build, where the reasons are written out): Icon Composer document -> actool ->
+# Assets.car (macOS 26+, follows the theme) and AppIcon.icns (macOS 13-15).
+xc=/Applications/Xcode.app/Contents
+if [ -f icon.swift ]; then
+swiftc -O -o $tmp/icon icon.swift
+mkdir -p $tmp/AppIcon.icon/Assets docs
+$tmp/icon $tmp/AppIcon.icon/Assets
+cat > $tmp/AppIcon.icon/icon.json <<'JSON'
+{
+  "fill" : "system-light",
+  "fill-specializations" : [ { "appearance" : "dark", "value" : "system-dark" } ],
+  "groups" : [ { "layers" : [ { "name" : "picture", "glass" : false,
+    "image-name-specializations" : [ { "value" : "light.png" }, { "appearance" : "dark", "value" : "dark.png" } ] } ],
+    "shadow" : { "kind" : "none", "opacity" : 0.5 }, "translucency" : { "enabled" : false, "value" : 0.5 } } ],
+  "supported-platforms" : { "squares" : [ "macOS" ] }
+}
+JSON
+DEVELOPER_DIR=$xc/Developer xcrun actool $tmp/AppIcon.icon --compile "$PWD/$app/Contents/Resources" --platform macosx \
+  --minimum-deployment-target $min --app-icon AppIcon --output-partial-info-plist $tmp/icon.plist --target-device mac >/dev/null
+for r in Default Dark; do
+  "$xc/Applications/Icon Composer.app/Contents/Executables/ictool" $tmp/AppIcon.icon --export-image --output-file $tmp/$r.png \
+    --platform macOS --rendition $r --width 206 --height 206 --scale 1 >/dev/null
+  sips -p 256 256 $tmp/$r.png --out docs/icon${${r:#Default}:+-dark}.png >/dev/null
+done
+fi
+cp LICENSE THIRD-PARTY-LICENSES.md "$app/Contents/Resources/"   # Sparkle's MIT license travels with it
+
+cat > "$app/Contents/Info.plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>CFBundleIdentifier</key><string>$id</string>
+<key>CFBundleName</key><string>$name</string>
+<key>CFBundleDisplayName</key><string>$name</string>
+<key>CFBundleExecutable</key><string>$name</string>
+<key>CFBundleDevelopmentRegion</key><string>en</string>
+<key>CFBundleLocalizations</key><array><string>en</string><string>ru</string><string>uk</string></array>
+<key>CFBundleIconFile</key><string>AppIcon</string>
+<key>CFBundleIconName</key><string>AppIcon</string>
+<key>CFBundlePackageType</key><string>APPL</string>
+<key>CFBundleShortVersionString</key><string>$version</string>
+<key>CFBundleVersion</key><string>$version</string>
+<key>LSUIElement</key><true/>
+<key>LSApplicationCategoryType</key><string>public.app-category.utilities</string>
+<key>LSMinimumSystemVersion</key><string>$min</string>
+<key>GitHubURL</key><string>https://github.com/geragarazagh/${(L)name}</string>
+<key>SUFeedURL</key><string>https://github.com/geragarazagh/${(L)name}/releases/latest/download/appcast.xml</string>
+<key>SUPublicEDKey</key><string>URlTczL/bZGecdDnRO3qHJgOYtOCe5FOPhKetm3FNqY=</string>
+<key>SURequireSignedFeed</key><true/>
+<key>SUVerifyUpdateBeforeExtraction</key><true/>
+<key>SUEnableAutomaticChecks</key><true/>
+<key>SUAllowsAutomaticUpdates</key><false/>
+</dict></plist>
+PLIST
+
+for l in ru uk; do
+  mkdir "$app/Contents/Resources/$l.lproj"; cp lang/$l.strings "$app/Contents/Resources/$l.lproj/Localizable.strings"
+done
+mkdir "$app/Contents/Resources/en.lproj"   # English is the text in the code
+
+mkdir -p "$app/Contents/Library/LaunchAgents"
+cat > "$app/Contents/Library/LaunchAgents/$id.login.plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>Label</key><string>$id.login</string>
+<key>BundleProgram</key><string>Contents/MacOS/$name</string>
+<key>ProgramArguments</key><array><string>Contents/MacOS/$name</string><string>--login</string></array>
+<key>AssociatedBundleIdentifiers</key><array><string>$id</string></array>
+<key>RunAtLoad</key><true/>
+<key>LimitLoadToSessionType</key><string>Aqua</string>
+</dict></plist>
+PLIST
+
+# Ad hoc unless SIGN_ID names a Developer ID certificate. Hardened runtime and a timestamp are what notarisation asks for.
+# Sparkle's parts are signed inside out, without --deep (Sparkle's own instructions). An ad hoc build has no team,
+# so dyld refuses the framework under library validation; only that build turns it off.
+sign=${SIGN_ID:--}; stamp=(); [ "$sign" = - ] || stamp=(--timestamp)
+ent=(); if [ "$sign" = - ]; then
+  /usr/libexec/PlistBuddy -c 'Add :com.apple.security.cs.disable-library-validation bool true' $tmp/e.plist >/dev/null; ent=(--entitlements $tmp/e.plist)
+fi
+for p in "$sp/Versions/B/Autoupdate" "$sp/Versions/B/Updater.app" "$sp"; do codesign -f -s "$sign" $stamp --options runtime "$p"; done
+codesign -f -s "$sign" $stamp --options runtime $ent --identifier $id "$app"
+echo Done

@@ -1,0 +1,14 @@
+.DS_Store
+SourceKey.app
+vendor/
+*.dmg
+.release
+appcast.xml
+data/src/
+test/
+results/
+bench
+benchsrc/
+keymap
+keymap.swift
+vmcheck/
