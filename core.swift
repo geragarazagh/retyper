@@ -92,6 +92,26 @@ let undoBySwitchMargin: Float = 4.5
         }
     }
 
+    /// The focused text field when it belongs to a panel of another process than the front app (Spotlight on 26: it eats
+    /// the first Backspace after typing, so «н» and the Retype key gave «нy», 2026-11-11), with its text, if that text
+    /// can be set through Accessibility. Asked with a short timeout: this runs in the key tap.
+    static func panelField() -> (AXUIElement, String)? {
+        let sys = AXUIElementCreateSystemWide()
+        AXUIElementSetMessagingTimeout(sys, 0.05)
+        var f: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(sys, kAXFocusedUIElementAttribute as CFString, &f) == .success, let fv = f,
+              CFGetTypeID(fv) == AXUIElementGetTypeID() else { return nil }
+        let el = fv as! AXUIElement
+        AXUIElementSetMessagingTimeout(el, 0.05)
+        var pid: pid_t = 0
+        guard AXUIElementGetPid(el, &pid) == .success, pid != NSWorkspace.shared.frontmostApplication?.processIdentifier else { return nil }
+        var v: CFTypeRef?, settable: DarwinBoolean = false
+        guard AXUIElementCopyAttributeValue(el, kAXValueAttribute as CFString, &v) == .success, let text = v as? String,
+              AXUIElementIsAttributeSettable(el, kAXValueAttribute as CFString, &settable) == .success, settable.boolValue else { return nil }
+        trace("panel field: pid \(pid) «\(text)»")
+        return (el, text)
+    }
+
     static func currentID() -> String? {
         guard let s = TISCopyCurrentKeyboardInputSource()?.takeRetainedValue(),
               let p = TISGetInputSourceProperty(s, kTISPropertyInputSourceID) else { return nil }
@@ -182,6 +202,15 @@ let undoBySwitchMargin: Float = 4.5
         let old = Array(screen(items[start...])), now = Array(screen(new))
         var same = 0
         while same < old.count, same < now.count, old[same] == now[same] { same += 1 }
+        // A panel's field (Spotlight) is set through Accessibility: keys there lose their first Backspace.
+        if let (el, text) = Core.panelField(), text.hasSuffix(String(old)) {
+            let set = String(text.dropLast(old.count)) + String(now)
+            if AXUIElementSetAttributeValue(el, kAXValueAttribute as CFString, set as CFTypeRef) == .success {
+                items.replaceSubrange(start..., with: new)
+                trace("retype «\(String(old))» -> «\(String(now))» (set in the panel's field)")
+                return
+            }
+        }
         for _ in same..<old.count { press(51, via: proxy) }
         type(String(now[same...]), in: layout, proxy)
         items.replaceSubrange(start..., with: new)
