@@ -1,30 +1,34 @@
-<picture><source media="(prefers-color-scheme: dark)" srcset="docs/icon-dark.png"><img src="docs/icon.png" width="128" alt="SourceKey icon"></picture>
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/icon-dark.png"><img src="docs/icon.png" width="128" alt="Retyper icon"></picture>
 
-# SourceKey: text typed in the wrong keyboard layout, retyped, for Mac
+# Retyper: text typed in the wrong keyboard layout, retyped, for Mac
 
 Free, open source app for macOS. A word typed in the wrong keyboard layout, such as `ghbdtn` for `привет`, is retyped in the right layout and the layout switches. It happens by itself at the end of the word, by the language key of macOS, or by the app’s own key. English, Russian and Ukrainian. Nothing typed is stored or sent anywhere.
 
 Apple silicon, macOS 13 or later. Interface in English, Ukrainian and Russian. Signed with a Developer ID and notarized by Apple.
 
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/scene.webp"><img src="docs/scene-light.webp" alt="Retyper in use: TextEdit with Mark Twain's first typewritten letter of 1874, typed with the Russian layout on; the line reads Ш ФЬ for I AM, and the menu bar shows the Russian input source"></picture>
+
+Typed with the Russian layout still on: “Ш ФЬ” is the keys of “I AM”. At the next Space, Retyper retypes both words and switches to ABC. The text is Mark Twain’s first typewritten letter, 1874; his own typos “T TO” and “F FANGLED” stay as they are.
+
 ## Install
 
-Download `SourceKey.dmg` from [Releases](https://github.com/geragarazagh/sourcekey/releases/latest), open it and drag `SourceKey.app` to Applications. On first launch it asks for Accessibility (on macOS 27: Device Control and Data Access) in System Settings, Privacy & Security. Later versions arrive through Check for Updates.
+Download `Retyper.dmg` from [Releases](https://github.com/geragarazagh/retyper/releases/latest), open it and drag `Retyper.app` to Applications. On first launch it asks for Accessibility (on macOS 27: Device Control and Data Access) in System Settings, Privacy & Security. Later versions arrive through Check for Updates.
 
 Or with [Homebrew](https://brew.sh):
 
 ```sh
-brew install geragarazagh/tap/sourcekey
+brew install geragarazagh/tap/retyper
 ```
 
 ## Use
 
 Typing goes on as usual. A word in the wrong layout is retyped at Space, Return or Tab. Right after a word, the language key (for example ⌥Space) retypes it in the layout it switches to; pressed again, it puts the word back. Option pressed twice retypes the last word, or the selected text, in the other script; pressed again, it puts it back. ⌘Z right after a fix undoes it.
 
-The window has Check for Updates, Retype, Exceptions, Open at Login and Quit. Opening the app shows its window. Closing the window leaves SourceKey working.
+The window has Check for Updates, Retype, Exceptions, Open at Login and Quit. Opening the app shows its window. Closing the window leaves Retyper working.
 
 ## For advanced users and language models
 
-macOS can switch the layout per document or with Caps Lock, but a word already typed in the wrong layout stays as it is: it has to be deleted, the layout switched, the word typed again. SourceKey retypes it. The word follows the layout: the app switches it when it is sure, or the person does, with any key macOS uses for it.
+macOS can switch the layout per document or with Caps Lock, but a word already typed in the wrong layout stays as it is: it has to be deleted, the layout switched, the word typed again. Retyper retypes it. The word follows the layout: the app switches it when it is sure, or the person does, with any key macOS uses for it.
 
 ### What it does
 
@@ -74,21 +78,23 @@ No. Apple silicon only, macOS 13 or later.
 
 Once a day the app reads the feed of its latest GitHub release (`appcast.xml`) through Sparkle. Nothing about the Mac is sent. When a newer version is out, a window shows it with Install Update, Remind Me Later and Skip This Version; nothing is downloaded before Install Update. Check for Updates in the window checks at once.
 
+0.1 was called SourceKey. Updated through Check for Updates, it keeps its file name, `SourceKey.app`; the app inside is Retyper.
+
 The feed and the disk image are signed with an EdDSA key, and Sparkle installs only an app that carries the same Developer ID signature.
 
 ### Settings and removal
 
-Exceptions are one plain text file, a word per line: `~/Library/Application Support/SourceKey/Exceptions.txt`, made when the first word is added. The Retype key, whether the app has been opened before and the time of the last update check are in the defaults of `com.geragaraza.sourcekey`. Open at Login is a login item the app registers itself (`SMAppService`) and turns off from the same window.
+Exceptions are one plain text file, a word per line: `~/Library/Application Support/Retyper/Exceptions.txt`, made when the first word is added. The Retype key, whether the app has been opened before and the time of the last update check are in the defaults of `com.geragaraza.sourcekey`. Open at Login is a login item the app registers itself (`SMAppService`) and turns off from the same window.
 
-To remove SourceKey: Quit in its window, move `SourceKey.app` to the Trash, run `defaults delete com.geragaraza.sourcekey` and delete the folder `~/Library/Application Support/SourceKey`. Its Accessibility entry is removed in System Settings, Privacy & Security.
+To remove Retyper: Quit in its window, move `Retyper.app` to the Trash, run `defaults delete com.geragaraza.sourcekey` and delete the folder `~/Library/Application Support/Retyper`. Its Accessibility entry is removed in System Settings, Privacy & Security.
 
-Installed with Homebrew, `brew uninstall --zap sourcekey` quits it and removes the app, its settings and Exceptions.
+Installed with Homebrew, `brew uninstall --zap retyper` quits it and removes the app, its settings and Exceptions.
 
 ### Details
 
 - Version: 0.1.
-- Bundle ID: `com.geragaraza.sourcekey`.
-- Download: `SourceKey.dmg`, 3.3 MB.
+- Bundle ID: `com.geragaraza.sourcekey`, kept from the first name, SourceKey (0.1), so an update keeps the Accessibility permission.
+- Download: `Retyper.dmg`, 3.3 MB.
 - Requires: Apple silicon, macOS 13 or later.
 - Permissions: Accessibility (on macOS 27: Device Control and Data Access). Network: only the update check.
 - Signed with a Developer ID and notarized by Apple.
