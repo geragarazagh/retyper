@@ -17,6 +17,8 @@ private weak var tapCore: Core?
     guard let port = CGEvent.tapCreate(tap: .cgSessionEventTap, place: .headInsertEventTap, options: .defaultTap, eventsOfInterest: mask, callback: { proxy, type, event, _ in
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
             if let tapPort { CGEvent.tapEnable(tap: tapPort, enable: true) }
+            // Keys pressed while the tap was off are missing from the word: a fix would delete the wrong letters.
+            MainActor.assumeIsolated { tapCore?.reset("tap re-enabled") }
             return Unmanaged.passUnretained(event)
         }
         // The callback runs on the main run loop, where the tap was added.
@@ -44,6 +46,8 @@ private weak var tapCore: Core?
                            github: Bundle.main.object(forInfoDictionaryKey: "GitHubURL") as? String ?? "https://github.com/geragarazagh",
                            extra: rows())
         window?.onShow = { [weak self] in self?.askAccess() }
+        // A key being recorded swallows plain keys everywhere: recording ends with the window (and on an app switch).
+        window?.onClose = { [weak self] in self?.core.stopRecording() }
         #if TRACE
         // --shot <file>: the window drawn off screen and written as a picture, then quit (pictures of every window
         // without anything on the screen). --exceptions picks that window.
@@ -73,8 +77,9 @@ private weak var tapCore: Core?
                        object: nil, suspensionBehavior: .deliverImmediately)
         dn.addObserver(self, selector: #selector(sourcesChanged), name: NSNotification.Name(kTISNotifyEnabledKeyboardInputSourcesChanged as String),
                        object: nil, suspensionBehavior: .deliverImmediately)
-        NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.core.reset("app changed"); self?.core.cur = self?.core.index(of: Core.currentID()) }
+        NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { [weak self] n in
+            let mine = (n.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication)?.processIdentifier == getpid()
+            MainActor.assumeIsolated { if !mine { self?.core.stopRecording() }; self?.core.reset("app changed"); self?.core.cur = self?.core.index(of: Core.currentID()) }
         }
         if !AXIsProcessTrusted() { askAccess() }
         #if TRACE

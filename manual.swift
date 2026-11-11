@@ -132,6 +132,8 @@ extension Core {
 
     /// While the window records a new key: the next shortcut (⌘, ⌥ or ⌃ with a key, or an F key), Esc to leave.
     /// A double tap is caught in flagsChanged. Plain keys are refused: they would stop typing that letter everywhere.
+    func stopRecording() { if let r = recording { recording = nil; r(nil) } }
+
     func recordKey(_ e: CGEvent) -> Bool {
         guard let r = recording else { return false }
         let code = Int(e.getIntegerValueField(.keyboardEventKeycode)), mods = Core.carbonMods(e.flags)
@@ -147,6 +149,7 @@ extension Core {
     /// read after the callback, since another app's Accessibility answer can take a while and keys must not wait.
     func retype(_ proxy: CGEventTapProxy) {
         guard let d = detector, !IsSecureEventInputEnabled() else { return }
+        retypeApp = NSWorkspace.shared.frontmostApplication?.processIdentifier
         // 1. Our last change, nothing typed since: back.
         if let p = pending, p.start + p.count <= items.count {
             let tail = Array(items[(p.start + p.count)...]).map { x -> Item in var y = x; if y.boundary == nil { y.layout = p.origLayout }; return y }
@@ -270,7 +273,11 @@ extension Core {
         case .notText:
             trace("retype key: focus is not editable text")
         case .unknown:
-            if !asked, ProcessInfo.processInfo.environment["SK_CLIPBOARD"] == nil, let app = NSWorkspace.shared.frontmostApplication, Core.isChromium(app) {
+            var testClipboard = false
+            #if TRACE
+            testClipboard = ProcessInfo.processInfo.environment["SK_CLIPBOARD"] != nil
+            #endif
+            if !asked, !testClipboard, let app = NSWorkspace.shared.frontmostApplication, Core.isChromium(app) {
                 AXUIElementSetAttributeValue(AXUIElementCreateApplication(app.processIdentifier), "AXManualAccessibility" as CFString, kCFBooleanTrue)
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { self.retypeSelection(asked: true) }
                 return
@@ -284,23 +291,33 @@ extension Core {
 
     func replaceSelection(_ text: String, with out: String, target: Int, element: AXUIElement?, src: Int) {
         trace("selection «\(text.prefix(40))» -> «\(out.prefix(40))»")
-        select(target)
-        reset("selection retyped")
         // Chromium answers «success» to setting the selected text and changes nothing (VS Code on 14, 2026-11-11):
         // there the text is typed over the selection, as a person would.
         let chromium = NSWorkspace.shared.frontmostApplication.map(Core.isChromium) ?? false
         if !chromium, let el = element, Core.setSelection(el, to: out) {
-            selPending = SelectionChange(orig: text, now: out, origLayout: src, element: el)
-        } else {
-            type(out, in: target, nil)
-            selPending = SelectionChange(orig: text, now: out, origLayout: src, element: nil)
+            select(target); reset("selection retyped")
+            selPending = SelectionChange(orig: text, now: out, origLayout: src, element: el); return
         }
+        // Typed text goes wherever the focus is now, and a line break or tab can only be typed as Return or Tab, which
+        // send a chat message or move the focus. So nothing is typed if the front app changed since the key was pressed
+        // (the selection is read up to half a second later), if a password field took the focus, or if the selection
+        // holds more than one line (security pass before 0.1, 2026-11-11).
+        guard NSWorkspace.shared.frontmostApplication?.processIdentifier == retypeApp, !IsSecureEventInputEnabled(),
+              !out.contains(where: { $0 == "\n" || $0 == "\t" || $0 == "\r" }) else { trace("selection not typed"); return }
+        select(target)
+        reset("selection retyped")
+        type(out, in: target, nil)
+        selPending = SelectionChange(orig: text, now: out, origLayout: src, element: nil)
     }
 
     func revertSelection(_ s: SelectionChange) {
         if let l = s.origLayout { select(l) }
         if let el = s.element, Core.setSelection(el, to: s.orig) { selPending = SelectionChange(orig: s.now, now: s.orig, origLayout: nil, element: el); return }
-        for _ in s.now { press(51, via: nil) }
+        // Typing back: the same guards as typing it (replaceSelection). An app switch since clears selPending already.
+        guard NSWorkspace.shared.frontmostApplication?.processIdentifier == retypeApp, !IsSecureEventInputEnabled(),
+              !s.orig.contains(where: { $0 == "\n" || $0 == "\t" || $0 == "\r" }) else { trace("selection not typed back"); return }
+        // Set through Accessibility, the new text is still selected: one Backspace takes it. Typed, a Backspace a letter.
+        for _ in 0..<(s.element == nil ? s.now.count : 1) { press(51, via: nil) }
         type(s.orig, in: s.origLayout, nil)
         trace("selection back")
     }
@@ -339,7 +356,8 @@ extension Core {
     /// Replaces the selection in place and selects the new text, so the key pressed again finds it.
     static func setSelection(_ el: AXUIElement, to text: String) -> Bool {
         var r: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(el, kAXSelectedTextRangeAttribute as CFString, &r) == .success, let rv = r else { return false }
+        guard AXUIElementCopyAttributeValue(el, kAXSelectedTextRangeAttribute as CFString, &r) == .success, let rv = r,
+              CFGetTypeID(rv) == AXValueGetTypeID() else { return false }
         var range = CFRange()
         guard AXValueGetValue(rv as! AXValue, .cfRange, &range) else { return false }
         guard AXUIElementSetAttributeValue(el, kAXSelectedTextAttribute as CFString, text as CFTypeRef) == .success else { return false }
@@ -351,6 +369,12 @@ extension Core {
     /// ⌘C, the copied text, and the clipboard put back exactly as it was (every item, every type).
     func copySelection(_ done: @escaping (String?) -> Void) {
         let pb = NSPasteboard.general
+        // A password copied from a password manager (marked concealed) is never put through a copy and a restore: the
+        // restore would look like a new copy to the manager's timed clearing and to clipboard history apps.
+        let concealed = NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType")
+        if copying || pb.types?.contains(concealed) == true || NSWorkspace.shared.frontmostApplication?.processIdentifier != retypeApp
+            || IsSecureEventInputEnabled() { done(nil); return }
+        copying = true
         let saved = (pb.pasteboardItems ?? []).map { item in item.types.compactMap { t in item.data(forType: t).map { (t, $0) } } }
         let before = pb.changeCount
         // As a keyboard sends it: ⌘ down, C, ⌘ up. A bare C with the ⌘ flag copied nothing in TextEdit (14).
@@ -362,16 +386,25 @@ extension Core {
         press(CGKeyCode(kVK_ANSI_C), .maskCommand, text: "c", via: nil)
         flags(false)
         let start = CACurrentMediaTime()
+        // The put-back is marked transient (nspasteboard.org), so clipboard history apps don't record it as a new copy.
+        func restore() {
+            pb.clearContents()
+            pb.writeObjects(saved.map { pairs in
+                let i = NSPasteboardItem(); for (t, d) in pairs { i.setData(d, forType: t) }
+                i.setData(Data(), forType: NSPasteboard.PasteboardType("org.nspasteboard.TransientType")); return i })
+        }
         func check() {
-            if pb.changeCount != before {
+            let late = CACurrentMediaTime() - start >= 0.4
+            if pb.changeCount == before + 1 {
                 let text = pb.string(forType: .string)
-                pb.clearContents()
-                pb.writeObjects(saved.map { pairs in let i = NSPasteboardItem(); for (t, d) in pairs { i.setData(d, forType: t) }; return i })
+                restore()
                 trace("copied «\(text?.prefix(40) ?? "-")», clipboard restored")
-                done(text)
-            } else if CACurrentMediaTime() - start < 0.4 {
+                copying = false
+                done(late ? nil : text)   // a copy that came late is not typed over: the moment has passed
+            } else if pb.changeCount == before && CACurrentMediaTime() - start < 2 {
+                // Too slow for the retype, but the copy may still land (a busy Electron app): watch on, to put back.
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.01, execute: check)
-            } else { trace("⌘C copied nothing"); done(nil) }
+            } else { copying = false; trace("⌘C: no copy of ours to put back"); done(nil) }   // nothing, or someone else's copy
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.01, execute: check)
     }

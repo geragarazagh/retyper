@@ -7,6 +7,8 @@ cd "${0:A:h}"
 # It changes per release, not per build.
 version=0.1 min=13.0 name=${NAME:-SourceKey} id=${ID:-com.geragaraza.sourcekey}
 app=$name.app
+# A TRACE build writes typed words to stderr: it is never signed for release.
+[ -n "$TRACE" ] && [ -n "$SIGN_ID" ] && { echo "A TRACE build is not signed with a Developer ID"; exit 1; }
 tmp=$(mktemp -d); trap 'rm -rf $tmp' EXIT
 rm -rf "$app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
@@ -21,6 +23,9 @@ if [ ! -d vendor/Sparkle.framework ]; then
   tar -xf $tmp/sparkle.tar.xz -C $tmp/sparkle Sparkle.framework
   ditto $tmp/sparkle/Sparkle.framework vendor/Sparkle.framework
 fi
+# A vendor copy left from an older pin would ship silently: the version must match.
+[ "$(defaults read $PWD/vendor/Sparkle.framework/Resources/Info.plist CFBundleShortVersionString)" = $sparkle ] ||
+  { echo "vendor/Sparkle.framework is not $sparkle: delete vendor/ and build again"; exit 1; }
 mkdir -p "$app/Contents/Frameworks"
 sp=$app/Contents/Frameworks/Sparkle.framework
 ditto vendor/Sparkle.framework "$sp"
@@ -50,7 +55,8 @@ $tmp/pack "$app/Contents/Resources/data" data/{en,ru,uk}.{words,ngram}
 cp data/LICENSE "$app/Contents/Resources/data/"
 
 # App icon, Apple's way (as in #HEX's build, where the reasons are written out): Icon Composer document -> actool ->
-# Assets.car (macOS 26+, follows the theme) and AppIcon.icns (macOS 13-15).
+# Assets.car (macOS 26+) and AppIcon.icns (macOS 13-15). One picture for both themes (icon.swift says why); the solid
+# fill under it only shows if the picture ever leaves a gap.
 xc=/Applications/Xcode.app/Contents
 if [ -f icon.swift ]; then
 swiftc -O -o $tmp/icon icon.swift
@@ -58,10 +64,8 @@ mkdir -p $tmp/AppIcon.icon/Assets docs
 $tmp/icon $tmp/AppIcon.icon/Assets
 cat > $tmp/AppIcon.icon/icon.json <<'JSON'
 {
-  "fill" : "system-light",
-  "fill-specializations" : [ { "appearance" : "dark", "value" : "system-dark" } ],
-  "groups" : [ { "layers" : [ { "name" : "picture", "glass" : false,
-    "image-name-specializations" : [ { "value" : "light.png" }, { "appearance" : "dark", "value" : "dark.png" } ] } ],
+  "fill" : { "solid" : "srgb:0.11765,0.11765,0.12549,1.00000" },
+  "groups" : [ { "layers" : [ { "name" : "key", "glass" : false, "image-name" : "key.png" } ],
     "shadow" : { "kind" : "none", "opacity" : 0.5 }, "translucency" : { "enabled" : false, "value" : 0.5 } } ],
   "supported-platforms" : { "squares" : [ "macOS" ] }
 }

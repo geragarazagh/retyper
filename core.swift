@@ -76,6 +76,8 @@ let undoBySwitchMargin: Float = 4.5
     var recording: ((ManualKey?) -> Void)?
     var tapMod = 0, tapDownAt: CFTimeInterval = 0, lastTap: (mod: Int, at: CFTimeInterval)?
     var selPending: SelectionChange?
+    var retypeApp: pid_t?
+    var copying = false     // a ⌘C of the selection is under way (manual.swift, copySelection)   // the front app when the Retype key was pressed: typing waits for no app switch
 
     init(dataDir: URL) { self.dataDir = dataDir }
 
@@ -286,7 +288,9 @@ let undoBySwitchMargin: Float = 4.5
     private func boundary(_ code: Int, _ event: CGEvent, _ proxy: CGEventTapProxy) -> Bool {
         let ch: Character = code == kVK_Space ? " " : (code == kVK_Tab ? "\t" : "\n")
         pending = nil
-        defer { if ch == "\n" { runStart = items.count } }
+        // Return and Tab end a run: a back fix never reaches over them, since retyping one would press it again
+        // (send the line, move to the next field).
+        defer { if ch != " " { runStart = items.count } }
         guard let d = detector, let cur else { return false }
         let ws = wordStart(before: items.count)
         let word = items[ws...]
@@ -442,6 +446,7 @@ let undoBySwitchMargin: Float = 4.5
     func convertSelection(to new: Int, from old: Int?, _ proxy: CGEventTapProxy?) {
         guard AXIsProcessTrusted(), case let .text(text, el) = Core.selection(), !text.isEmpty,
               let p = plan(text, forced: false, preferred: new) else { return }
+        retypeApp = NSWorkspace.shared.frontmostApplication?.processIdentifier
         replaceSelection(text, with: p.out, target: p.target, element: el, src: p.src)
     }
 
@@ -494,7 +499,11 @@ struct Exceptions {
         return words.contains(Exceptions.norm(typed))
     }
 
-    mutating func add(_ typed: String) { var w = list; w.append(typed); save(w) }
+    mutating func add(_ typed: String) {
+        // A file that exists but can't be read is left alone: saving would replace the list with this one word.
+        if FileManager.default.fileExists(atPath: Exceptions.file.path), (try? String(contentsOf: Exceptions.file, encoding: .utf8)) == nil { return }
+        var w = list; w.append(typed); save(w)
+    }
 
     var list: [String] {
         ((try? String(contentsOf: Exceptions.file, encoding: .utf8)) ?? "").split(separator: "\n").map(String.init).filter { !$0.isEmpty }
@@ -504,7 +513,8 @@ struct Exceptions {
         var seen = Set<String>()
         let clean = list.map(Exceptions.norm).filter { !$0.isEmpty && seen.insert($0).inserted }
         let fm = FileManager.default
-        if clean.isEmpty { try? fm.removeItem(at: Exceptions.file); try? fm.removeItem(at: Exceptions.file.deletingLastPathComponent()) }
+        // The folder goes too when the list is empty, but only if nothing else is in it (rmdir refuses otherwise).
+        if clean.isEmpty { try? fm.removeItem(at: Exceptions.file); rmdir(Exceptions.file.deletingLastPathComponent().path) }
         else {
             try? fm.createDirectory(at: Exceptions.file.deletingLastPathComponent(), withIntermediateDirectories: true)
             try? (clean.joined(separator: "\n") + "\n").write(to: Exceptions.file, atomically: true, encoding: .utf8)

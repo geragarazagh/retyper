@@ -105,8 +105,8 @@ public final class LangModel {
     if let d = load("\(lang).ngram"), let s = String(data: d, encoding: .utf8) {
       for line in s.split(separator: "\n", omittingEmptySubsequences: true) {
         let p = line.split(separator: "\t", omittingEmptySubsequences: false)
-        guard p.count == 3 else { continue }
-        if p[1].isEmpty { gamma[String(p[0])] = Float(p[2])! } else { ng[String(p[0]) + "\t" + String(p[1])] = Float(p[2])!
+        guard p.count == 3, let v = Float(p[2]) else { continue }
+        if p[1].isEmpty { gamma[String(p[0])] = v } else { ng[String(p[0]) + "\t" + String(p[1])] = v
           order = max(order, p[0].count + 1) } } }
   }
   func charLP(_ h: Substring, _ c: Character) -> Float {

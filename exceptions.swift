@@ -50,7 +50,7 @@ import AppKit
     func controlTextDidChange(_ n: Notification) { fitField(); edited() }
     func windowWillClose(_ n: Notification) { panel.makeFirstResponder(nil); edited() }
 
-    @objc func edited() { exceptions.save((field.objectValue as? [String]) ?? []) }
+    @objc func edited() { if let list = field.objectValue as? [String] { exceptions.save(list) } }
 
     func show(beside main: NSWindow?) {
         exceptions.reload()

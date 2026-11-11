@@ -66,6 +66,7 @@ final class AppIconView: NSImageView {
     let panel: NSPanel
     let loginSwitch = NSSwitch()
     var onShow: (() -> Void)?
+    var onClose: (() -> Void)?
 
     init(name: String, github: String, extra: NSView? = nil) {
         self.name = name
@@ -166,6 +167,7 @@ final class AppIconView: NSImageView {
         Updates.shared.appOpened()
     }
 
+    func windowWillClose(_ n: Notification) { onClose?() }
     func windowDidBecomeKey(_ n: Notification) { loginSwitch.state = login.status == .enabled ? .on : .off; onShow?() }
 
     @objc func openLink(_ b: NSButton) {
