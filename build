@@ -5,7 +5,7 @@
 set -e
 cd "${0:A:h}"
 # It changes per release, not per build.
-version=0.1 min=13.0 name=${NAME:-SourceKey} id=${ID:-com.geragaraza.sourcekey}
+version=0.1.1 min=13.0 name=${NAME:-Retyper} id=${ID:-com.geragaraza.sourcekey}
 app=$name.app
 # A TRACE build writes typed words to stderr: it is never signed for release.
 [ -n "$TRACE" ] && [ -n "$SIGN_ID" ] && { echo "A TRACE build is not signed with a Developer ID"; exit 1; }

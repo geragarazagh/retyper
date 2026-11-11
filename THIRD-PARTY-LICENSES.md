@@ -1,6 +1,6 @@
 # Third-party licenses
 
-SourceKey's code is under the MIT license in [LICENSE](LICENSE).
+Retyper's code is under the MIT license in [LICENSE](LICENSE).
 
 ## In the app
 

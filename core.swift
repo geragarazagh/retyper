@@ -505,7 +505,7 @@ let undoBySwitchMargin: Float = 4.5
 struct Exceptions {
     static var file: URL {
         let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent(Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String ?? "SourceKey")
+            .appendingPathComponent(Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String ?? "Retyper")
         return dir.appendingPathComponent("Exceptions.txt")
     }
     private(set) var words: Set<String> = []

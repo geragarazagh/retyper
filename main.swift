@@ -42,7 +42,7 @@ private weak var tapCore: Core?
     func applicationDidFinishLaunching(_ n: Notification) {
         let data = Bundle.main.resourceURL!.appendingPathComponent("data")
         core = Core(dataDir: data)
-        window = AppWindow(name: Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String ?? "SourceKey",
+        window = AppWindow(name: Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String ?? "Retyper",
                            github: Bundle.main.object(forInfoDictionaryKey: "GitHubURL") as? String ?? "https://github.com/geragarazagh",
                            extra: rows())
         window?.onShow = { [weak self] in self?.askAccess() }

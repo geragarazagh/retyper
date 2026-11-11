@@ -1,5 +1,5 @@
-// SourceKey's icon: the G/П key cap of a Russian Apple keyboard, laid in place of an icon. The app rests on that fact:
-// every key carries two letters, and SourceKey reads the other one. G/П is the first key of «ghbdtn» → «привет».
+// Retyper's icon: the G/П key cap of a Russian Apple keyboard, laid in place of an icon. The app rests on that fact:
+// every key carries two letters, and Retyper reads the other one. G/П is the first key of «ghbdtn» → «привет».
 // One version for both appearances: keys are dark on Apple's laptops, so the cap stays dark in the light theme too.
 // Legends as Apple draws them (its render of the Russian Magic Keyboard with black keys): SF Pro Regular, colour #E0DEDD,
 // the cap shaded from #141416 at the top to #2D2D2F at the bottom. Their arrangement as on a MacBook key: G large in the
