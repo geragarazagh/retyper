@@ -6,9 +6,13 @@ Free, open source app for macOS. A word typed in the wrong keyboard layout, such
 
 Apple silicon, macOS 13 or later. Interface in English, Ukrainian and Russian. Signed with a Developer ID and notarized by Apple.
 
-<picture><source media="(prefers-color-scheme: dark)" srcset="docs/scene.webp"><img src="docs/scene-light.webp" alt="Retyper in use: TextEdit with Mark Twain's first typewritten letter of 1874, typed with the Russian layout on; the line reads Ш ФЬ for I AM, and the menu bar shows the Russian input source"></picture>
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/scene.webp"><img src="docs/scene-light.webp" alt="Spotlight with ыфафкш typed while the Russian layout is on; the menu bar shows the Russian input source"></picture>
 
-Typed with the Russian layout still on: “Ш ФЬ” is the keys of “I AM”. At the next Space, Retyper retypes both words and switches to ABC. The text is Mark Twain’s first typewritten letter, 1874; his own typos “T TO” and “F FANGLED” stay as they are.
+Typed in Spotlight with the Russian layout still on: “ыфафкш” is the keys of “safari”, so nothing is found.
+
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/scene-after.webp"><img src="docs/scene-after-light.webp" alt="The same Spotlight after the Space: the word reads safari, Safari is the top result, and the menu bar shows ABC"></picture>
+
+At the Space, Retyper retypes the word as “safari” and switches the layout to ABC; Spotlight finds Safari.
 
 ## Install
 
