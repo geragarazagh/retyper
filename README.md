@@ -12,7 +12,7 @@ Typed with the Russian layout still on: “Ш ФЬ” is the keys of “I AM”.
 
 ## Install
 
-Download `Retyper.dmg` from [Releases](https://github.com/geragarazagh/retyper/releases/latest), open it and drag `Retyper.app` to Applications. On first launch it asks for Accessibility (on macOS 27: Device Control and Data Access) in System Settings, Privacy & Security. Later versions arrive through Check for Updates.
+**Mac** (Apple silicon, macOS 13 or later): download [`Retyper.dmg`](https://github.com/geragarazagh/retyper/releases/latest/download/Retyper.dmg) (3.3 MB), open it and drag `Retyper.app` to Applications. On first launch it asks for Accessibility (on macOS 27: Device Control and Data Access) in System Settings, Privacy & Security. Later versions arrive through Check for Updates.
 
 Or with [Homebrew](https://brew.sh):
 
