@@ -50,12 +50,34 @@ import AppKit
     func controlTextDidChange(_ n: Notification) { fitField(); edited() }
     func windowWillClose(_ n: Notification) { panel.makeFirstResponder(nil); edited() }
 
-    @objc func edited() { if let list = field.objectValue as? [String] { exceptions.save(list) } }
+    // What the field showed when last loaded or saved. The core adds a word to the file at an undo while the window may
+    // be open; a save of the whole field would drop it, so only the person's own changes are applied to the file as it
+    // is now (security pass before 0.1, left then; fixed 2026-11-13).
+    var shown: Set<String> = []
+
+    @objc func edited() {
+        guard let list = field.objectValue as? [String] else { return }
+        let now = Set(list.map(Exceptions.norm).filter { !$0.isEmpty })
+        let added = list.filter { !shown.contains(Exceptions.norm($0)) }, removed = shown.subtracting(now)
+        if added.isEmpty && removed.isEmpty { return }
+        let file = exceptions.list.filter { !removed.contains(Exceptions.norm($0)) }
+        exceptions.save(file + added)
+        shown = now
+    }
+
+    func windowDidBecomeKey(_ n: Notification) { load() }
+
+    /// The file as it is now into the field, when it changed since the field was filled.
+    func load() {
+        let list = exceptions.list
+        let set = Set(list.map(Exceptions.norm))
+        if set == shown, field.objectValue != nil { return }
+        field.objectValue = list; shown = set; fitField()
+    }
 
     func show(beside main: NSWindow?) {
         exceptions.reload()
-        field.objectValue = exceptions.list
-        fitField()
+        shown = []; load()
         if !panel.isVisible, let main {
             let f = main.frame, s = main.screen?.visibleFrame ?? f
             var x = f.maxX + 12

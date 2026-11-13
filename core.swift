@@ -14,6 +14,8 @@
 //   read back from the layout (UCKeyTranslate), so nothing typed is ever stored as text.
 // - Our own events carry a marker in eventSourceUserData and the tap passes them by.
 // - Secure Input (a password field): macOS gives the tap no keys at all, and the app types nothing while it is on.
+//   Terminals other than Terminal.app don't turn it on at a password prompt, so a terminal line waiting for a password
+//   is treated the same way, and a terminal line that no shell is editing gets no fix at Return or Tab (tty.swift).
 
 import AppKit
 import Carbon.HIToolbox
@@ -77,6 +79,11 @@ let undoBySwitchMargin: Float = 4.5
     var tapMod = 0, tapDownAt: CFTimeInterval = 0, lastTap: (mod: Int, at: CFTimeInterval)?
     var selPending: SelectionChange?
     var retypeApp: pid_t?
+    var treeAsked: Set<pid_t> = []  // apps whose Accessibility tree we asked for (manual.swift, askTree)
+    var lineAt: (pid: pid_t, at: CFTimeInterval, line: Line)?   // tty.swift's answer for the app in front (line())
+    var lineBusy = false
+    let ttyQueue = DispatchQueue(label: "tty", qos: .userInitiated)
+    var frontPid: pid_t = NSWorkspace.shared.frontmostApplication?.processIdentifier ?? 0   // kept by main.swift
     var copying = false     // a ⌘C of the selection is under way (manual.swift, copySelection)   // the front app when the Retype key was pressed: typing waits for no app switch
 
     init(dataDir: URL) { self.dataDir = dataDir }
@@ -148,6 +155,27 @@ let undoBySwitchMargin: Float = 4.5
         if !items.isEmpty || pending != nil { trace("reset: \(why)") }
         items = []; runStart = 0; pending = nil; settled = false; comboAt = nil; deferred = nil; selPending = nil
     }
+
+    /// What the line of the app in front waits for (tty.swift), as last measured. The tap callback only reads it: the
+    /// measurement (all processes, the ttys of the app's own) runs on a queue of its own, started by keys when the
+    /// answer is older than 0.1 s for a terminal or 2 s for another app. Measured inside the callback, it made macOS
+    /// let a whole sentence through unfixed now and then on the test machine (6 scenarios of 333, 2026-11-13; none of
+    /// 185 without it): a password is typed key by key, so the answer is ready well before its Return.
+    func line() -> Line {
+        let pid = frontPid
+        let c = lineAt?.pid == pid ? lineAt : nil
+        if !lineBusy, pid != 0, c == nil || CACurrentMediaTime() - c!.at > (c!.line == .none ? 2 : 0.1) {
+            lineBusy = true
+            ttyQueue.async {
+                let l = TTY.state(of: pid)
+                DispatchQueue.main.async { MainActor.assumeIsolated { self.lineAt = (pid, CACurrentMediaTime(), l); self.lineBusy = false } }
+            }
+        }
+        return c?.line ?? .none
+    }
+
+    /// Secure Input, or a terminal asking for a password: no keys kept, nothing typed.
+    func secure() -> Bool { IsSecureEventInputEnabled() || line() == .password }
 
     func screen<C: Collection>(_ its: C) -> String where C.Element == Item {
         guard let d = detector else { return "" }
@@ -268,6 +296,7 @@ let undoBySwitchMargin: Float = 4.5
         if let c = index(of: id), c != cur { switched(to: c, proxy) }
         else if index(of: id) == nil && cur != nil { cur = nil; reset("not a keyboard layout") }
         guard let cur else { return false }
+        if line() == .password { reset("password prompt"); return false }
         // The person let go of the language key's modifier and typed on before our wait noticed: retype first.
         if let w = deferred, !(cmd || ctrl || opt) { deferred = nil; follow(w.new, from: w.old, proxy) }
 
@@ -321,6 +350,18 @@ let undoBySwitchMargin: Float = 4.5
         // (send the line, move to the next field).
         defer { if ch != " " { runStart = items.count } }
         guard let d = detector, let cur else { return false }
+        // A password typed in a terminal (tty.swift): forgotten, passed on as typed. A word ending in Return or Tab in
+        // a terminal is changed only while a shell edits its own command line; with anything else in front (sudo, ssh,
+        // tmux, where a remote password prompt can't be seen) it stays as typed and the line is forgotten.
+        // At Return and Tab in a terminal the answer is taken fresh, here in the callback (about 0.4-2 ms, only in an
+        // app with a terminal): a password typed ahead of its prompt is over before a cached answer catches up.
+        var l = line()
+        if l != .none && ch != " " { l = TTY.state(of: frontPid); lineAt = (frontPid, CACurrentMediaTime(), l) }
+        switch l {
+        case .password: reset("password prompt"); return false
+        case .busy where ch != " ": reset("terminal busy at the line end"); return false
+        default: break
+        }
         let ws = wordStart(before: items.count)
         let word = items[ws...]
         func plain() -> Bool { items.append(Item(key: Key(UInt16(code), false), layout: cur, boundary: ch)); trim(); return false }
@@ -394,7 +435,7 @@ let undoBySwitchMargin: Float = 4.5
         if d.layouts[new].script == .cyrillic { lastCyr = new }
         if expectID == id { expectID = nil; return }
         expectID = nil
-        if IsSecureEventInputEnabled() { reset("secure input"); return }
+        if secure() { reset("secure input"); return }
         if let c = comboAt, CACurrentMediaTime() - c > 0.6 { reset("shortcut") }
         comboAt = nil
         trace("switch \(old.map { d.layouts[$0].id } ?? "-") -> \(id)")
@@ -492,7 +533,12 @@ let undoBySwitchMargin: Float = 4.5
             guard let b = w[kCGWindowBounds as String] as? NSDictionary, let r = CGRect(dictionaryRepresentation: b), r.contains(p) else { continue }
             let layer = w[kCGWindowLayer as String] as? Int ?? 0
             if (w[kCGWindowAlpha as String] as? Double ?? 1) == 0 { continue }
-            return layer >= Int(CGWindowLevelForKey(.mainMenuWindow))
+            // An overlay that lets clicks through (a cursor highlighter, a screen annotation tool) floats above the
+            // menus or covers a whole screen; menus do neither. Look under it (security pass before 0.1, left then).
+            if layer > Int(CGWindowLevelForKey(.popUpMenuWindow)) { continue }
+            let menu = Int(CGWindowLevelForKey(.mainMenuWindow))
+            if layer >= menu, NSScreen.screens.contains(where: { $0.frame.width <= r.width + 1 && $0.frame.height <= r.height + 1 }) { continue }
+            return layer >= menu
         }
         return false
     }

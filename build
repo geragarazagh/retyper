@@ -5,7 +5,7 @@
 set -e
 cd "${0:A:h}"
 # It changes per release, not per build.
-version=0.1.1 min=13.0 name=${NAME:-Retyper} id=${ID:-com.geragaraza.sourcekey}
+version=0.1.2 min=13.0 name=${NAME:-Retyper} id=${ID:-com.geragaraza.sourcekey}
 app=$name.app
 # A TRACE build writes typed words to stderr: it is never signed for release.
 [ -n "$TRACE" ] && [ -n "$SIGN_ID" ] && { echo "A TRACE build is not signed with a Developer ID"; exit 1; }
@@ -39,7 +39,7 @@ done
 # refuses to launch the result. Apple silicon only: Intel can't be tested on a Mac without Rosetta.
 # TRACE=1 makes a test build that reports every decision to stderr (core.swift, trace); never released.
 swiftc -O ${TRACE:+-DTRACE} -target arm64-apple-macos$min -F vendor -framework Sparkle -Xlinker -rpath -Xlinker @executable_path/../Frameworks \
-  -o "$app/Contents/MacOS/$name" main.swift core.swift manual.swift keyrow.swift detect.swift exceptions.swift window.swift updates.swift
+  -o "$app/Contents/MacOS/$name" main.swift core.swift tty.swift manual.swift keyrow.swift detect.swift exceptions.swift window.swift updates.swift
 
 # The language data, lzfse-compressed (6.7 MB of text -> about 1.8 MB); detect.swift unpacks it at launch.
 cat > $tmp/pack.swift <<'SWIFT'

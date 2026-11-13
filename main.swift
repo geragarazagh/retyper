@@ -79,7 +79,8 @@ private weak var tapCore: Core?
                        object: nil, suspensionBehavior: .deliverImmediately)
         NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { [weak self] n in
             let mine = (n.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication)?.processIdentifier == getpid()
-            MainActor.assumeIsolated { if !mine { self?.core.stopRecording() }; self?.core.reset("app changed"); self?.core.cur = self?.core.index(of: Core.currentID()) }
+            let pid = (n.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication)?.processIdentifier
+            MainActor.assumeIsolated { if !mine { self?.core.stopRecording() }; self?.core.reset("app changed"); self?.core.cur = self?.core.index(of: Core.currentID()); self?.core.dropTrees(except: pid); if let pid { self?.core.frontPid = pid } }
         }
         if !AXIsProcessTrusted() { askAccess() }
         #if TRACE

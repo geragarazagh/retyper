@@ -148,7 +148,7 @@ extension Core {
     /// The Retype key was pressed. Inside the tap callback (proxy set) for what the buffer knows; the selection is
     /// read after the callback, since another app's Accessibility answer can take a while and keys must not wait.
     func retype(_ proxy: CGEventTapProxy) {
-        guard let d = detector, !IsSecureEventInputEnabled() else { return }
+        guard let d = detector, !secure() else { return }
         retypeApp = NSWorkspace.shared.frontmostApplication?.processIdentifier
         // 1. Our last change, nothing typed since: back.
         if let p = pending, p.start + p.count <= items.count {
@@ -179,7 +179,7 @@ extension Core {
         }
         // Electron and Chromium build their Accessibility tree only when asked: ask, look again a moment later.
         if case .unknown = sel, !asked, AXIsProcessTrusted(), let app = NSWorkspace.shared.frontmostApplication, Core.isChromium(app) {
-            AXUIElementSetAttributeValue(AXUIElementCreateApplication(app.processIdentifier), "AXManualAccessibility" as CFString, kCFBooleanTrue)
+            askTree(app.processIdentifier)
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { self.retypeAfter(asked: true) }
             return
         }
@@ -278,7 +278,7 @@ extension Core {
             testClipboard = ProcessInfo.processInfo.environment["SK_CLIPBOARD"] != nil
             #endif
             if !asked, !testClipboard, let app = NSWorkspace.shared.frontmostApplication, Core.isChromium(app) {
-                AXUIElementSetAttributeValue(AXUIElementCreateApplication(app.processIdentifier), "AXManualAccessibility" as CFString, kCFBooleanTrue)
+                askTree(app.processIdentifier)
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { self.retypeSelection(asked: true) }
                 return
             }
@@ -302,7 +302,7 @@ extension Core {
         // send a chat message or move the focus. So nothing is typed if the front app changed since the key was pressed
         // (the selection is read up to half a second later), if a password field took the focus, or if the selection
         // holds more than one line (security pass before 0.1, 2026-11-11).
-        guard NSWorkspace.shared.frontmostApplication?.processIdentifier == retypeApp, !IsSecureEventInputEnabled(),
+        guard NSWorkspace.shared.frontmostApplication?.processIdentifier == retypeApp, !secure(),
               !out.contains(where: { $0 == "\n" || $0 == "\t" || $0 == "\r" }) else { trace("selection not typed"); return }
         select(target)
         reset("selection retyped")
@@ -314,7 +314,7 @@ extension Core {
         if let l = s.origLayout { select(l) }
         if let el = s.element, Core.setSelection(el, to: s.orig) { selPending = SelectionChange(orig: s.now, now: s.orig, origLayout: nil, element: el); return }
         // Typing back: the same guards as typing it (replaceSelection). An app switch since clears selPending already.
-        guard NSWorkspace.shared.frontmostApplication?.processIdentifier == retypeApp, !IsSecureEventInputEnabled(),
+        guard NSWorkspace.shared.frontmostApplication?.processIdentifier == retypeApp, !secure(),
               !s.orig.contains(where: { $0 == "\n" || $0 == "\t" || $0 == "\r" }) else { trace("selection not typed back"); return }
         // Set through Accessibility, the new text is still selected: one Backspace takes it. Typed, a Backspace a letter.
         for _ in 0..<(s.element == nil ? s.now.count : 1) { press(51, via: nil) }
@@ -335,6 +335,11 @@ extension Core {
         var f: CFTypeRef?
         let el: AXUIElement? = AXUIElementCopyAttributeValue(appEl, kAXFocusedUIElementAttribute as CFString, &f) == .success && f != nil ? (f as! AXUIElement) : nil
         guard let el else { return .unknown }
+        // A list of files or rows (Finder) is no text: ⌘C there copies files, and typing their names back would jump
+        // through the list by type-select (security pass before 0.1, left then; fixed 2026-11-13).
+        var role: CFTypeRef?
+        if AXUIElementCopyAttributeValue(el, kAXRoleAttribute as CFString, &role) == .success, let r = role as? String,
+           Core.notTextRoles.contains(r) { return .notText }
         var settable: DarwinBoolean = false
         guard AXUIElementIsAttributeSettable(el, kAXValueAttribute as CFString, &settable) == .success, settable.boolValue else {
             var s: CFTypeRef?
@@ -345,6 +350,26 @@ extension Core {
         guard AXUIElementCopyAttributeValue(el, kAXSelectedTextAttribute as CFString, &s) == .success, let str = s as? String else { return .unknown }
         return .text(str, el)
     }
+
+    /// Electron and Chromium build their Accessibility tree only when asked (AXManualAccessibility), and keep it at a
+    /// cost in CPU. Asked for the Retype key, it is turned off again when the app leaves the front, unless something
+    /// else had turned it on (security pass before 0.1, left then; done 2026-11-13).
+    func askTree(_ pid: pid_t) {
+        let el = AXUIElementCreateApplication(pid)
+        var v: CFTypeRef?
+        if AXUIElementCopyAttributeValue(el, "AXManualAccessibility" as CFString, &v) == .success, (v as? Bool) == true { return }
+        AXUIElementSetAttributeValue(el, "AXManualAccessibility" as CFString, kCFBooleanTrue)
+        treeAsked.insert(pid)
+    }
+
+    func dropTrees(except front: pid_t?) {
+        for pid in treeAsked where pid != front {
+            AXUIElementSetAttributeValue(AXUIElementCreateApplication(pid), "AXManualAccessibility" as CFString, kCFBooleanFalse)
+        }
+        treeAsked = treeAsked.filter { $0 == front }
+    }
+
+    static let notTextRoles: Set<String> = ["AXOutline", "AXList", "AXTable", "AXBrowser", "AXGrid", "AXRow", "AXCell", "AXImage", "AXButton"]
 
     static func isChromium(_ app: NSRunningApplication) -> Bool {
         guard let url = app.bundleURL else { return false }
@@ -373,7 +398,7 @@ extension Core {
         // restore would look like a new copy to the manager's timed clearing and to clipboard history apps.
         let concealed = NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType")
         if copying || pb.types?.contains(concealed) == true || NSWorkspace.shared.frontmostApplication?.processIdentifier != retypeApp
-            || IsSecureEventInputEnabled() { done(nil); return }
+            || secure() { done(nil); return }
         copying = true
         let saved = (pb.pasteboardItems ?? []).map { item in item.types.compactMap { t in item.data(forType: t).map { (t, $0) } } }
         let before = pb.changeCount
