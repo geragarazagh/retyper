@@ -1,3 +1,5 @@
+English · [Українська](README_UA.md) · [Русский](README_RU.md)
+
 <picture><source media="(prefers-color-scheme: dark)" srcset="docs/icon-dark.png"><img src="docs/icon.png" width="128" alt="Retyper icon"></picture>
 
 # Retyper: text typed in the wrong keyboard layout, retyped, for Mac
