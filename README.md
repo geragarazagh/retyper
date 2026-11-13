@@ -92,9 +92,19 @@ The feed and the disk image are signed with an EdDSA key, and Sparkle installs o
 
 Exceptions are one plain text file, a word per line: `~/Library/Application Support/Retyper/Exceptions.txt`, made when the first word is added. The Retype key, whether the app has been opened before and the time of the last update check are in the defaults of `com.geragaraza.sourcekey`. Open at Login is a login item the app registers itself (`SMAppService`) and turns off from the same window.
 
-To remove Retyper: Quit in its window, move `Retyper.app` to the Trash, run `defaults delete com.geragaraza.sourcekey` and delete the folder `~/Library/Application Support/Retyper`. Its Accessibility entry is removed in System Settings, Privacy & Security.
+To remove Retyper: Quit in its window, move `Retyper.app` to the Trash, delete the folder `~/Library/Application Support/Retyper` and clear its settings with this command:
 
-Installed with Homebrew, `brew uninstall --zap retyper` quits it and removes the app, its settings and Exceptions.
+```sh
+defaults delete com.geragaraza.sourcekey
+```
+
+Installed with Homebrew, this command quits it and removes the app, its settings and Exceptions:
+
+```sh
+brew uninstall --zap retyper
+```
+
+Either way, its Accessibility entry is removed in System Settings, Privacy & Security.
 
 ### Details
 
