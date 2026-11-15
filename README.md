@@ -1,12 +1,10 @@
-English · [Українська](README_UA.md) · [Русский](README_RU.md)
-
 <picture><source media="(prefers-color-scheme: dark)" srcset="docs/icon-dark.png"><img src="docs/icon.png" width="128" alt="Retyper icon"></picture>
 
 # Retyper: text typed in the wrong keyboard layout, retyped, for Mac
 
 Free, open source app for macOS. A word typed in the wrong keyboard layout, such as `ghbdtn` for `привет`, is retyped in the right layout and the layout switches. It happens by itself at the end of the word, by the language key of macOS, or by the app’s own key. English, Russian and Ukrainian. Nothing typed is stored or sent anywhere.
 
-Apple silicon, macOS 13 or later. Interface in English, Ukrainian and Russian. Signed with a Developer ID and notarized by Apple.
+Apple silicon, macOS 13 or later. Signed with a Developer ID and notarized by Apple.
 
 <picture><source media="(prefers-color-scheme: dark)" srcset="docs/scene.webp"><img src="docs/scene-light.webp" alt="Spotlight with ыфафкш typed while the Russian layout is on; the menu bar shows the Russian input source"></picture>
 
@@ -114,7 +112,6 @@ Either way, its Accessibility entry is removed in System Settings, Privacy & Sec
 - Requires: Apple silicon, macOS 13 or later.
 - Permissions: Accessibility (on macOS 27: Device Control and Data Access). Network: only the update check.
 - Signed with a Developer ID and notarized by Apple.
-- Interface: English, Ukrainian, Russian, from the language of macOS.
 - Code: Swift with AppKit, about 1,500 lines, and the Sparkle framework for updates.
 - License: MIT. Sparkle is MIT too. The word lists are derived from wordfreq and are CC BY-SA 4.0. Both licenses come with the app and are in `THIRD-PARTY-LICENSES.md`.
 
