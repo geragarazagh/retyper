@@ -24,7 +24,7 @@ func startInBackgroundIfAtLogin() {
     exit(0)
 }
 
-// The English text is the key; ru and uk come from lang/, picked by macOS from the system language.
+// The interface is in English only (2026-11-15; ru and uk from 2026-11-08 to then): L() returns its English key.
 // Wording of macOS's own terms (Open at Login, Quit, Privacy & Security) is copied from its .loctable files.
 func L(_ s: String) -> String { NSLocalizedString(s, comment: "") }
 
