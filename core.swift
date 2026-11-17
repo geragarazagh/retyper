@@ -45,6 +45,8 @@ struct Action {
     var auto: Bool
     var typed: String       // the last word as typed, for the exceptions
     var margin: Float = 0   // log10 odds the fix won by
+    var steps: [Int] = []   // the Retype key's cycle over the span (cycle.swift), built at its first press
+    var at = -1             // index in steps of the layout the span shows now; -1: as typed
 }
 
 /// After an automatic fix, switching back undoes it only when the fix was a close call. A clear one («ghbdtn» →
@@ -62,6 +64,7 @@ let undoBySwitchMargin: Float = 4.5
     var lastCyr: Int?
     var runStart = 0                // first item of the current run (since a switch, a fix or Return)
     var pending: Action?
+    var again: Action?              // the Retype key took the span back as typed: pressed again, the cycle goes on
     var settled = false             // after an undo the next switch only switches
     var comboAt: CFTimeInterval?    // a key with ⌘ ⌃ or ⌥ came last: maybe the language key
     var expectID: String?           // the layout we selected ourselves
@@ -153,7 +156,7 @@ let undoBySwitchMargin: Float = 4.5
 
     func reset(_ why: String) {
         if !items.isEmpty || pending != nil { trace("reset: \(why)") }
-        items = []; runStart = 0; pending = nil; settled = false; comboAt = nil; deferred = nil; selPending = nil
+        items = []; runStart = 0; pending = nil; again = nil; settled = false; comboAt = nil; deferred = nil; selPending = nil
     }
 
     /// What the line of the app in front waits for (tty.swift), as last measured. The tap callback only reads it: the
@@ -194,6 +197,7 @@ let undoBySwitchMargin: Float = 4.5
         guard cut > 0 else { return }
         items.removeFirst(cut); runStart = max(0, runStart - cut)
         if let p = pending { if p.start >= cut { pending!.start -= cut } else { pending = nil } }
+        if let p = again { if p.start >= cut { again!.start -= cut } else { again = nil } }
     }
 
     // MARK: posting
@@ -272,7 +276,7 @@ let undoBySwitchMargin: Float = 4.5
         case .keyDown:
             if recordKey(event) { return nil }
             if manualKeyDown(event, proxy) { return nil }
-            clearTaps()
+            clearTaps(); again = nil   // any other key ends the Retype key's cycle
             return keyDown(event, proxy) ? nil : pass
         case .flagsChanged:
             flagsChanged(event, proxy)
@@ -435,6 +439,7 @@ let undoBySwitchMargin: Float = 4.5
         if d.layouts[new].script == .cyrillic { lastCyr = new }
         if expectID == id { expectID = nil; return }
         expectID = nil
+        again = nil
         if secure() { reset("secure input"); return }
         if let c = comboAt, CACurrentMediaTime() - c > 0.6 { reset("shortcut") }
         comboAt = nil
@@ -515,16 +520,14 @@ let undoBySwitchMargin: Float = 4.5
     /// so selecting a word and switching to type over it in the other language changes nothing.
     func convertSelection(to new: Int, from old: Int?, _ proxy: CGEventTapProxy?) {
         guard AXIsProcessTrusted(), case let .text(text, el) = Core.selection(), !text.isEmpty,
-              let p = plan(text, forced: false, preferred: new) else { return }
+              let p = plan(text, preferred: new), var s = selectionCycle(text, preferred: new, first: p.target) else { return }
         retypeApp = NSWorkspace.shared.frontmostApplication?.processIdentifier
-        replaceSelection(text, with: p.out, target: p.target, element: el, src: p.src)
+        // The first step of the Retype key's cycle: that key pressed next goes on from here.
+        s.element = el
+        show(s, step: 0)
     }
 
-    static func script(_ c: Character) -> Script {
-        guard let u = c.unicodeScalars.first else { return .other }
-        if (0x0400...0x04FF).contains(u.value) { return .cyrillic }
-        return u.value < 0x250 ? .latin : .other
-    }
+    static func script(_ c: Character) -> Script { Detector.script(of: c) }
 
     /// A click on the menu bar or an open menu (the input menu among them) moves no caret.
     static func onMenu(_ p: CGPoint) -> Bool {

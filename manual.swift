@@ -1,9 +1,12 @@
 // manual.swift: the Retype key, a command of its own besides the language key, for the cases the detector judges
 // wrong or a stretch found later. It does what it is told, with no judgement of the detector:
-// - right after our fix or retype (nothing typed since): takes it back, as ⌘Z does;
-// - a selection: retyped in the other script (Latin → Cyrillic, Cyrillic → Latin), any length; pressed again, back;
-// - else the last word (the caret touches it, or the word and one space): retyped in the other script; again, back.
-// The layout follows the text. The key is a shortcut with ⌘, ⌥ or ⌃, or one modifier tapped twice. A tap counts only
+// - a selection: retyped in the other script (Latin → Cyrillic, Cyrillic → Latin), any length;
+// - else the last word (the caret touches it, or the word and one space): retyped in the other script;
+// - pressed again with nothing else done since, the same keys go on through the installed languages and back as typed
+//   (cycle.swift): Latin typed → the best Cyrillic → the other Cyrillic → as typed → …; right after an automatic fix or a
+//   retype by the language key the cycle goes on from what that chose. With two layouts it is a toggle, as before
+//   2026-11-17, when the second press always went back. Back as typed after an automatic fix remembers the word.
+// The layout follows the text at every step. The key is a shortcut with ⌘, ⌥ or ⌃, or one modifier tapped twice. A tap counts only
 // when the modifier goes down and up alone and quickly: holding ⌥ for zoom with the wheel, or ⌥Space, is never a tap
 // (a switcher that fires on an accidental double ⌥ retypes whole texts).
 //
@@ -70,12 +73,17 @@ struct ManualKey: Equatable {
     }
 }
 
-/// A selection the Retype key changed, while nothing else happened: pressed again, it goes back.
+/// A selection the Retype key (or ⌥Space's gated conversion) changed, while nothing else happened: pressed again, the
+/// next step of its cycle; after the last, back as typed, and on.
 struct SelectionChange {
-    var orig: String
-    var now: String
-    var origLayout: Int?
-    var element: AXUIElement?   // replaced in place through Accessibility (and selected again), else typed over
+    var orig: String                        // the text as selected
+    var src: Int                            // the layout whose keys typed it
+    var steps: [(layout: Int, out: String)] // the cycle (cycle.swift): each layout and the text it reads
+    var at = -1                             // the step on screen; -1: orig
+    var element: AXUIElement?               // replaced in place through Accessibility (and selected again)
+    var selected = true                     // the text on screen is still selected (set through Accessibility, or not yet replaced)
+    var now: String { at < 0 ? orig : steps[at].out }
+    var layout: Int { at < 0 ? src : steps[at].layout }
 }
 
 extension Core {
@@ -150,17 +158,10 @@ extension Core {
     func retype(_ proxy: CGEventTapProxy) {
         guard let d = detector, !secure() else { return }
         retypeApp = NSWorkspace.shared.frontmostApplication?.processIdentifier
-        // 1. Our last change, nothing typed since: back.
-        if let p = pending, p.start + p.count <= items.count {
-            let tail = Array(items[(p.start + p.count)...]).map { x -> Item in var y = x; if y.boundary == nil { y.layout = p.origLayout }; return y }
-            select(p.origLayout)
-            replace(from: p.start, with: p.orig + tail, typeIn: p.origLayout, proxy)
-            if p.auto { exceptions.add(p.typed) }
-            pending = nil; settled = true; runStart = items.count
-            trace("retype key: back")
-            return
-        }
-        if let s = selPending { selPending = nil; DispatchQueue.main.async { self.revertSelection(s) }; return }
+        // 1. Our last change (an automatic fix, a retype by the language key or by this key, or this key's way back),
+        //    nothing typed since: the next step of the cycle.
+        if let p = pending ?? again, p.start + p.count <= items.count { step(p, proxy); return }
+        if let s = selPending { selPending = nil; DispatchQueue.main.async { self.stepSelection(s) }; return }
         // A shortcut since the last word (⌘A, ⌘C, a click in a menu): the word is no longer what the caret touches.
         if comboAt != nil { reset("shortcut before the Retype key") }
         // 2. A selection wins over the word typed before it (found 2026-11-11: text typed, then ⌘A and the key retyped
@@ -174,7 +175,7 @@ extension Core {
         if ProcessInfo.processInfo.environment["SK_CLIPBOARD"] != nil { sel = .unknown }   // test the ⌘C way anywhere
         #endif
         if case let .text(text, el) = sel, !text.isEmpty {
-            if let p = plan(text, forced: true, preferred: cur) { replaceSelection(text, with: p.out, target: p.target, element: el, src: p.src) }
+            startSelection(text, element: el)
             return
         }
         // Electron and Chromium build their Accessibility tree only when asked: ask, look again a moment later.
@@ -188,72 +189,91 @@ extension Core {
         if case .text("", _) = sel, let app = NSWorkspace.shared.frontmostApplication, Core.isChromium(app), items.isEmpty {
             copySelection { [weak self] text in
                 // Monaco copies the whole line, ending in a line break, when nothing is selected: not a selection.
-                guard let self, let text, !text.isEmpty, !text.hasSuffix("\n"), let p = self.plan(text, forced: true, preferred: self.cur) else { return }
-                self.replaceSelection(text, with: p.out, target: p.target, element: nil, src: p.src)
+                guard let self, let text, !text.isEmpty, !text.hasSuffix("\n") else { return }
+                self.startSelection(text, element: nil)
             }
             return
         }
         guard let d = detector else { return }
-        // 3. The last word: forced into the other script.
+        // 3. The last word: forced into the other script, the first step of its cycle.
         var end = items.count
         if end > 0, items[end - 1].boundary == " " { end -= 1 }
         if end > 0, items[end - 1].boundary == nil {
             let ws = wordStart(before: end)
             let word = Array(items[ws..<end])
             let from = word[0].layout
-            if word.allSatisfy({ $0.layout == from }), let to = otherScript(word.map { $0.key }, from: from) {
-                let tail = Array(items[end...])
-                select(to)
-                replace(from: ws, with: word.map { var x = $0; x.layout = to; return x } + tail, typeIn: to, nil)
-                pending = Action(start: ws, count: word.count, orig: word, origLayout: from, auto: false, typed: d.layouts[from].read(word.map { $0.key }))
-                settled = false; runStart = items.count
-                trace("retype key: word")
-                return
+            if word.allSatisfy({ $0.layout == from }) {
+                let a = Action(start: ws, count: word.count, orig: word, origLayout: from, auto: false, typed: d.layouts[from].read(word.map { $0.key }))
+                if step(a, nil) { trace("retype key: word"); return }
             }
         }
         // 4. A selection Accessibility can't see (Electron before its tree is on, apps without one).
         retypeSelection()
     }
 
-    /// The best layout of the other script for these keys (the Cyrillic used last when two are close).
-    func otherScript(_ keys: [Key], from: Int) -> Int? {
-        guard let d = detector else { return nil }
-        let fromScript = d.layouts[from].script
-        let cands = d.layouts.indices.filter { d.layouts[$0].script != fromScript && d.layouts[$0].script != .other && d.layouts[$0].lang != nil }
-        guard cands.count > 1 else { return cands.first }
-        let rs = d.readings(keys)
-        return cands.max { a, b in abs(rs[a].score - rs[b].score) < 0.5 ? (b == lastCyr) : rs[a].score < rs[b].score }
+    /// One step of the cycle for our last change, or the first one for a word (a.steps empty, shown as typed): the span
+    /// retyped in the next layout, or, after the last, back as typed. False when there is no step (the word reads the same
+    /// in every layout).
+    @discardableResult
+    func step(_ a: Action, _ proxy: CGEventTapProxy?) -> Bool {
+        guard let d = detector else { return false }
+        var p = a
+        let shown = p.orig.firstIndex(where: { $0.boundary == nil }).map { items[p.start + $0].layout } ?? p.origLayout
+        // Where the span stands in its cycle. The cycle is built once, at the first press, and kept: rebuilt each time,
+        // its ties would follow the Cyrillic used last, which each step changes. A language key switch in between may
+        // have moved the span to a layout the cycle lacks: then a new cycle from there.
+        if shown == p.origLayout { p.at = -1 }
+        else if let i = p.steps.firstIndex(of: shown) { p.at = i }
+        else { p.steps = []; p.at = 0 }
+        if p.steps.isEmpty {
+            var words: [[Key]] = [[]]
+            for x in p.orig { if x.boundary == nil { words[words.count - 1].append(x.key) } else if !words[words.count - 1].isEmpty { words.append([]) } }
+            p.steps = d.retypeCycle(words.filter { !$0.isEmpty }, typed: p.origLayout, first: shown == p.origLayout ? nil : shown, lastCyrillic: lastCyr)
+            if p.steps.isEmpty { return false }
+        }
+        let tail = Array(items[(p.start + p.count)...])   // boundaries typed after the change (its Space)
+        let next = p.at + 1
+        if next < p.steps.count {
+            let to = p.steps[next]
+            select(to)
+            replace(from: p.start, with: p.orig.map { var x = $0; if x.boundary == nil { x.layout = to }; return x } + tail, typeIn: to, proxy)
+            // After this key the span is his choice: the language key back to where it was typed takes it back, as
+            // after any retype by hand (the «clear fix only switches» rule is for the automatic fix alone).
+            p.at = next; p.margin = 0
+            pending = p; again = nil; settled = false
+            trace("retype key: step \(next + 1) of \(p.steps.count), \(d.layouts[to].id)")
+        } else {
+            select(p.origLayout)
+            replace(from: p.start, with: p.orig + tail, typeIn: p.origLayout, proxy)
+            if p.auto { exceptions.add(p.typed) }
+            p.at = -1
+            pending = nil; again = p; settled = true
+            trace("retype key: back")
+        }
+        runStart = items.count
+        return true
     }
 
-    /// What a text becomes: the keys that typed it (in the layout of its main script that gives all its letters) read
-    /// in another layout. forced: always the other script; else only a layout it reads much better in (⌥Space's gate).
-    func plan(_ text: String, forced: Bool, preferred: Int?) -> (out: String, target: Int, src: Int)? {
-        guard let d = detector else { return nil }
-        var latin = 0, cyr = 0
-        for c in text where c.isLetter { switch Core.script(c) { case .latin: latin += 1; case .cyrillic: cyr += 1; default: break } }
-        guard latin + cyr > 0 else { return nil }
-        let fromScript: Script = latin >= cyr ? .latin : .cyrillic
-        let firstPick = fromScript == .cyrillic ? lastCyr : preferred
-        let candidates = d.layouts.indices.filter { d.layouts[$0].script == fromScript }.sorted { a, _ in a == firstPick }
-        func gives(_ l: Int) -> Bool { text.allSatisfy { c in !c.isLetter || Core.script(c) != fromScript || d.layouts[l].key(for: c) != nil } }
-        guard let src = candidates.first(where: gives) else { return nil }
-        var total = [Int: Float](), typed: Float = 0, words = 0
-        for w in text.split(whereSeparator: { $0.isWhitespace }) where w.contains(where: { $0.isLetter }) {
-            var k: [Key] = []
-            for c in w { guard let x = d.layouts[src].key(for: c) else { k = []; break }; k.append(x) }
-            guard !k.isEmpty else { continue }
+    /// The Retype key's cycle over a selection (cycle.swift); `first` when ⌥Space's conversion already chose a layout.
+    func selectionCycle(_ text: String, preferred: Int?, first: Int? = nil) -> SelectionChange? {
+        guard let c = detector?.retypeCycle(selection: text, preferred: preferred, first: first, lastCyrillic: lastCyr) else { return nil }
+        return SelectionChange(orig: text, src: c.src, steps: c.steps)
+    }
+
+    /// ⌥Space over a selection: converted only into a layout it reads much better in (sum of word scores, odds > 10).
+    func plan(_ text: String, preferred: Int?) -> (out: String, target: Int, src: Int)? {
+        guard let d = detector, let src = d.source(of: text, preferred: preferred, lastCyrillic: lastCyr) else { return nil }
+        let words = d.selectionWords(text, src)
+        guard !words.isEmpty else { return nil }
+        var total = [Int: Float](), typed: Float = 0
+        for k in words {
             let rs = d.readings(k, asTyped: src)
-            typed += rs[src].score; words += 1
+            typed += rs[src].score
             for r in rs where r.layout != src && d.layouts[r.layout].lang != nil { total[r.layout, default: 0] += r.score }
         }
-        if forced { total = total.filter { d.layouts[$0.key].script != fromScript } }
-        let tie = forced ? lastCyr : preferred
-        guard let best = total.max(by: { a, b in abs(a.value - b.value) < 0.5 ? (b.key == lastCyr || b.key == tie) : a.value < b.value })
-                ?? (forced ? d.layouts.indices.first(where: { d.layouts[$0].script != fromScript && d.layouts[$0].lang != nil }).map { ($0, Float(0)) } : nil)
-        else { return nil }
-        if !forced { guard words > 0, best.value - typed > 1 else { return nil } }
-        var out = ""
-        for c in text { if let k = d.layouts[src].key(for: c) { let r = d.layouts[best.key].read(k); out += r.isEmpty ? String(c) : r } else { out.append(c) } }
+        guard let best = total.max(by: { a, b in abs(a.value - b.value) < 0.5 ? (b.key == lastCyr || b.key == preferred) : a.value < b.value }),
+              best.value - typed > 1 else { return nil }
+        let out = d.convert(text, src, best.key)
         return out == text ? nil : (out, best.key, src)
     }
 
@@ -268,8 +288,8 @@ extension Core {
         #endif
         switch sel {
         case .text(let text, let el):
-            guard !text.isEmpty, let p = plan(text, forced: true, preferred: cur) else { trace("retype key: nothing selected"); return }
-            replaceSelection(text, with: p.out, target: p.target, element: el, src: p.src)
+            guard !text.isEmpty else { trace("retype key: nothing selected"); return }
+            startSelection(text, element: el)
         case .notText:
             trace("retype key: focus is not editable text")
         case .unknown:
@@ -283,43 +303,49 @@ extension Core {
                 return
             }
             copySelection { [weak self] text in
-                guard let self, let text, !text.isEmpty, let p = self.plan(text, forced: true, preferred: self.cur) else { return }
-                self.replaceSelection(text, with: p.out, target: p.target, element: nil, src: p.src)
+                guard let self, let text, !text.isEmpty else { return }
+                self.startSelection(text, element: nil)
             }
         }
     }
 
-    func replaceSelection(_ text: String, with out: String, target: Int, element: AXUIElement?, src: Int) {
-        trace("selection «\(text.prefix(40))» -> «\(out.prefix(40))»")
+    /// The Retype key's first press over a selection: the first step of its cycle.
+    func startSelection(_ text: String, element: AXUIElement?) {
+        guard var s = selectionCycle(text, preferred: cur) else { trace("retype key: selection reads the same everywhere"); return }
+        s.element = element
+        show(s, step: 0)
+    }
+
+    /// Pressed again over the selection it changed: the next step, after the last back as typed, and round again.
+    func stepSelection(_ s: SelectionChange) { show(s, step: s.at + 1 < s.steps.count ? s.at + 1 : -1) }
+
+    /// Puts step `next` (-1: the text as selected) where the selection's current text is, and selects its layout.
+    func show(_ s0: SelectionChange, step next: Int) {
+        var s = s0
+        let old = s.now, overSelection = s.at == -1 && s.selected   // the text as selected, still selected
+        s.at = next
+        let new = s.now
+        trace("selection «\(old.prefix(40))» -> «\(new.prefix(40))»")
         // Chromium answers «success» to setting the selected text and changes nothing (VS Code on 14, 2026-11-11):
         // there the text is typed over the selection, as a person would.
         let chromium = NSWorkspace.shared.frontmostApplication.map(Core.isChromium) ?? false
-        if !chromium, let el = element, Core.setSelection(el, to: out) {
-            select(target); reset("selection retyped")
-            selPending = SelectionChange(orig: text, now: out, origLayout: src, element: el); return
+        if !chromium, s.selected, let el = s.element, Core.setSelection(el, to: new) {
+            select(s.layout); reset("selection retyped"); selPending = s; return
         }
         // Typed text goes wherever the focus is now, and a line break or tab can only be typed as Return or Tab, which
         // send a chat message or move the focus. So nothing is typed if the front app changed since the key was pressed
         // (the selection is read up to half a second later), if a password field took the focus, or if the selection
-        // holds more than one line (security pass before 0.1, 2026-11-11).
+        // holds more than one line (security pass before 0.1, 2026-11-11). An app switch since clears selPending already.
         guard NSWorkspace.shared.frontmostApplication?.processIdentifier == retypeApp, !secure(),
-              !out.contains(where: { $0 == "\n" || $0 == "\t" || $0 == "\r" }) else { trace("selection not typed"); return }
-        select(target)
+              !new.contains(where: { $0 == "\n" || $0 == "\t" || $0 == "\r" }) else { trace("selection not typed"); return }
+        select(s.layout)
         reset("selection retyped")
-        type(out, in: target, nil)
-        selPending = SelectionChange(orig: text, now: out, origLayout: src, element: nil)
-    }
-
-    func revertSelection(_ s: SelectionChange) {
-        if let l = s.origLayout { select(l) }
-        if let el = s.element, Core.setSelection(el, to: s.orig) { selPending = SelectionChange(orig: s.now, now: s.orig, origLayout: nil, element: el); return }
-        // Typing back: the same guards as typing it (replaceSelection). An app switch since clears selPending already.
-        guard NSWorkspace.shared.frontmostApplication?.processIdentifier == retypeApp, !secure(),
-              !s.orig.contains(where: { $0 == "\n" || $0 == "\t" || $0 == "\r" }) else { trace("selection not typed back"); return }
-        // Set through Accessibility, the new text is still selected: one Backspace takes it. Typed, a Backspace a letter.
-        for _ in 0..<(s.element == nil ? s.now.count : 1) { press(51, via: nil) }
-        type(s.orig, in: s.origLayout, nil)
-        trace("selection back")
+        // The selection itself is typed over. Later the text is ours: still selected (set through Accessibility,
+        // which then failed), one Backspace takes it; typed by us, a Backspace a letter.
+        if !overSelection { for _ in 0..<(s0.selected ? 1 : old.count) { press(51, via: nil) } }
+        type(new, in: s.layout, nil)
+        s.selected = false; s.element = nil
+        selPending = s
     }
 
     // MARK: Accessibility and the clipboard
@@ -385,7 +411,13 @@ extension Core {
               CFGetTypeID(rv) == AXValueGetTypeID() else { return false }
         var range = CFRange()
         guard AXValueGetValue(rv as! AXValue, .cfRange, &range) else { return false }
+        var before: CFTypeRef?, after: CFTypeRef?
+        AXUIElementCopyAttributeValue(el, kAXValueAttribute as CFString, &before)
         guard AXUIElementSetAttributeValue(el, kAXSelectedTextAttribute as CFString, text as CFTypeRef) == .success else { return false }
+        // Safari's text areas (27.2, 2026-11-17; 0.1.2 too) answer «success» as Chromium does and keep their text: then
+        // the text is typed over the selection, still selected as it was.
+        AXUIElementCopyAttributeValue(el, kAXValueAttribute as CFString, &after)
+        if let b = before as? String, let a = after as? String, a == b { trace("the field kept its text"); return false }
         var new = CFRange(location: range.location, length: (text as NSString).length)
         if let v = AXValueCreate(.cfRange, &new) { AXUIElementSetAttributeValue(el, kAXSelectedTextRangeAttribute as CFString, v) }
         return true
