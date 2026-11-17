@@ -230,6 +230,9 @@ extension Core {
             for x in p.orig { if x.boundary == nil { words[words.count - 1].append(x.key) } else if !words[words.count - 1].isEmpty { words.append([]) } }
             p.steps = d.retypeCycle(words.filter { !$0.isEmpty }, typed: p.origLayout, first: shown == p.origLayout ? nil : shown, lastCyrillic: lastCyr)
             if p.steps.isEmpty { return false }
+            // The layout on screen may be no step: a layout of the typed language (U.S. for ABC) reads as typed and is
+            // dropped. Then the span counts as typed, and the next press is the cycle's first step, not its second.
+            p.at = p.steps.firstIndex(of: shown) ?? -1
         }
         let tail = Array(items[(p.start + p.count)...])   // boundaries typed after the change (its Space)
         let next = p.at + 1
