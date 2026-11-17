@@ -26,7 +26,7 @@ brew install geragarazagh/tap/retyper
 
 ## Use
 
-Typing goes on as usual. A word in the wrong layout is retyped at Space, Return or Tab. Right after a word, the language key (for example ⌥Space) retypes it in the layout it switches to; pressed again, it puts the word back. Option pressed twice retypes the last word, or the selected text, in the other script; pressed again, it puts it back. ⌘Z right after a fix undoes it.
+Typing goes on as usual. A word in the wrong layout is retyped at Space, Return or Tab. Right after a word, the language key (for example ⌥Space) retypes it in the layout it switches to; pressed again, it puts the word back. Option pressed twice retypes the last word, or the selected text, in the other script; each further press retypes it in the next installed language and then as typed: with the ABC, Russian and Ukrainian layouts, `ghbdsn` becomes `привіт`, then `привыт`, then `ghbdsn` again. ⌘Z right after a fix undoes it.
 
 The window has Check for Updates, Retype, Exceptions, Open at Login and Quit. Opening the app shows its window. Closing the window leaves Retyper working.
 
@@ -39,7 +39,7 @@ macOS can switch the layout per document or with Caps Lock, but a word already t
 - At the end of a word (Space, Return, Tab) a word typed in the wrong layout is retyped in the right one, and the layout switches. A word that proves a run wrong fixes up to three words before it in that run: `d 2022 ujle` becomes `в 2022 году`.
 - Latin ↔ Cyrillic in both directions, and Russian ↔ Ukrainian where the letters differ. Which Cyrillic a Latin word becomes is decided per word; on a tie, the Cyrillic layout used last.
 - The language key: right after a word, switching the input source in any way (a key, the Globe key, Caps Lock, the menu bar) retypes that word in the new layout, unless the word reads right as typed. One letter and then the key: always, so `н` becomes `y`.
-- Retype, its own key (Option pressed twice by default; a shortcut with ⌘, ⌥ or ⌃, an F key, or another modifier pressed twice can be set): with text selected, the selection of any length is retyped in the other script; without, the last word. Pressed again, it puts the text back. It has no detector: what it is asked to retype, it retypes.
+- Retype, its own key (Option pressed twice by default; a shortcut with ⌘, ⌥ or ⌃, an F key, or another modifier pressed twice can be set): with text selected, the selection of any length is retyped in the other script; without, the last word. Pressed again with nothing else done in between, it retypes the same keys in the next installed language, one step per language (English, Russian, Ukrainian; a language in which the text reads the same is skipped), and after the last it brings back the text as typed; with two layouts it switches between them. Right after an automatic fix it goes on from the language the fix chose. The layout follows the text at each step. It has no detector: what it is asked to retype, it retypes.
 - Undo: ⌘Z right after an automatic fix, or switching the layout again after a close call (`yt` → `не`). A clear fix (`ghbdtn` → `привет`) stays when the layout is switched, so the next word can be typed in the other language. A word taken back is remembered in Exceptions and not fixed automatically again.
 - Left alone: addresses with `://`, e-mail, command line flags, words with digits, `_`, `=`, `$` or `#`, Latin camelCase; paths and file names unless the other reading is a known word. A one-letter word is never fixed alone; a word of one or two letters is fixed only when a word after it in the same run confirms it.
 - Works in every app, terminals and code editors included, with no list of apps. Nothing in the Dock or the menu bar.
@@ -106,13 +106,13 @@ Either way, its Accessibility entry is removed in System Settings, Privacy & Sec
 
 ### Details
 
-- Version: 0.1.
+- Version: 0.2.
 - Bundle ID: `com.geragaraza.sourcekey`, kept from the first name, SourceKey (0.1), so an update keeps the Accessibility permission.
 - Download: `Retyper.dmg`, 3.3 MB.
 - Requires: Apple silicon, macOS 13 or later.
 - Permissions: Accessibility (on macOS 27: Device Control and Data Access). Network: only the update check.
 - Signed with a Developer ID and notarized by Apple.
-- Code: Swift with AppKit, about 1,500 lines, and the Sparkle framework for updates.
+- Code: Swift with AppKit, about 1,700 lines, and the Sparkle framework for updates.
 - License: MIT. Sparkle is MIT too. The word lists are derived from wordfreq and are CC BY-SA 4.0. Both licenses come with the app and are in `THIRD-PARTY-LICENSES.md`.
 
 ### Build
