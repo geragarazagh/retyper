@@ -1,4 +1,4 @@
-<picture><source media="(prefers-color-scheme: dark)" srcset="docs/icon-dark.png"><img src="docs/icon.png" width="128" alt="Retyper icon"></picture>
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/icon-github-dark.png"><img src="docs/icon-github.png" width="128" alt="Retyper icon"></picture>
 
 # Retyper: text typed in the wrong keyboard layout, retyped, for Mac
 
