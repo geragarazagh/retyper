@@ -7,6 +7,7 @@ import ApplicationServices
 import Carbon.HIToolbox
 
 startInBackgroundIfAtLogin()
+_ = MainActor.assumeIsolated { runRetyperCLI(CommandLine.arguments) }
 
 private var tapPort: CFMachPort?
 private weak var tapCore: Core?

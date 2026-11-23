@@ -1,5 +1,7 @@
 #!/bin/zsh
-# Builds the app in this folder. Needs Xcode Command Line Tools, and full Xcode for the icon (actool, Icon Composer).
+# Builds the app in this folder. Works with Xcode Command Line Tools alone for ad-hoc local builds;
+# full Xcode in /Applications is used for the icon (actool, Icon Composer: Assets.car; required for Developer ID
+# signed releases).
 # Same recipe as #HEX, OCR, STT, HoldQ: Sparkle for updates, Icon Composer for the icon.
 # NAME and ID override it for test builds under another name.
 set -e
@@ -7,6 +9,11 @@ cd "${0:A:h}"
 # It changes per release, not per build.
 version=0.2 min=13.0 name=${NAME:-Retyper} id=${ID:-com.geragaraza.sourcekey}
 app=$name.app
+xc=${XCODE_CONTENTS:-/Applications/Xcode.app/Contents}
+has_xcode=0; [ -d "$xc/Developer" ] && [ -x "$xc/Applications/Icon Composer.app/Contents/Executables/ictool" ] && has_xcode=1
+if [ -n "${SIGN_ID:-}" ] && [ "$SIGN_ID" != - ] && [ $has_xcode -eq 0 ]; then
+  echo "Developer ID builds require full Xcode at $xc (for Assets.car)"; exit 1
+fi
 # A TRACE build writes typed words to stderr: it is never signed for release.
 [ -n "$TRACE" ] && [ -n "$SIGN_ID" ] && { echo "A TRACE build is not signed with a Developer ID"; exit 1; }
 tmp=$(mktemp -d); trap 'rm -rf $tmp' EXIT
@@ -39,7 +46,7 @@ done
 # refuses to launch the result. Apple silicon only: Intel can't be tested on a Mac without Rosetta.
 # TRACE=1 makes a test build that reports every decision to stderr (core.swift, trace); never released.
 swiftc -O ${TRACE:+-DTRACE} -target arm64-apple-macos$min -F vendor -framework Sparkle -Xlinker -rpath -Xlinker @executable_path/../Frameworks \
-  -o "$app/Contents/MacOS/$name" main.swift core.swift tty.swift manual.swift cycle.swift keyrow.swift detect.swift exceptions.swift window.swift updates.swift
+  -o "$app/Contents/MacOS/$name" main.swift cli.swift core.swift tty.swift manual.swift cycle.swift keyrow.swift detect.swift exceptions.swift window.swift updates.swift
 
 # The language data, lzfse-compressed (6.7 MB of text -> about 1.8 MB); detect.swift unpacks it at launch.
 cat > $tmp/pack.swift <<'SWIFT'
@@ -57,12 +64,14 @@ cp data/LICENSE "$app/Contents/Resources/data/"
 # App icon, Apple's way (as in #HEX's build, where the reasons are written out): Icon Composer document -> actool ->
 # Assets.car (macOS 26+) and AppIcon.icns (macOS 13-15). One picture for both themes (icon.swift says why); the solid
 # fill under it only shows if the picture ever leaves a gap.
-xc=/Applications/Xcode.app/Contents
+# On Macs with Command Line Tools only (no Xcode.app), AppIcon.icns is packed from icon.swift's picture via
+# sips + iconutil, and docs/icon*.png are left as they are.
 if [ -f icon.swift ]; then
-swiftc -O -o $tmp/icon icon.swift
-mkdir -p $tmp/AppIcon.icon/Assets docs
-$tmp/icon $tmp/AppIcon.icon/Assets
-cat > $tmp/AppIcon.icon/icon.json <<'JSON'
+  swiftc -O -o $tmp/icon icon.swift
+  mkdir -p $tmp/AppIcon.icon/Assets docs
+  $tmp/icon $tmp/AppIcon.icon/Assets
+  if [ $has_xcode -eq 1 ]; then
+    cat > $tmp/AppIcon.icon/icon.json <<'JSON'
 {
   "fill" : { "solid" : "srgb:0.11765,0.11765,0.12549,1.00000" },
   "groups" : [ { "layers" : [ { "name" : "key", "glass" : false, "image-name" : "key.png" } ],
@@ -70,15 +79,25 @@ cat > $tmp/AppIcon.icon/icon.json <<'JSON'
   "supported-platforms" : { "squares" : [ "macOS" ] }
 }
 JSON
-DEVELOPER_DIR=$xc/Developer xcrun actool $tmp/AppIcon.icon --compile "$PWD/$app/Contents/Resources" --platform macosx \
-  --minimum-deployment-target $min --app-icon AppIcon --output-partial-info-plist $tmp/icon.plist --target-device mac >/dev/null
-for r in Default Dark; do
-  "$xc/Applications/Icon Composer.app/Contents/Executables/ictool" $tmp/AppIcon.icon --export-image --output-file $tmp/$r.png \
-    --platform macOS --rendition $r --width 206 --height 206 --scale 1 >/dev/null
-  sips -p 256 256 $tmp/$r.png --out docs/icon${${r:#Default}:+-dark}.png >/dev/null
-done
+    DEVELOPER_DIR=$xc/Developer xcrun actool $tmp/AppIcon.icon --compile "$PWD/$app/Contents/Resources" --platform macosx \
+      --minimum-deployment-target $min --app-icon AppIcon --output-partial-info-plist $tmp/icon.plist --target-device mac >/dev/null
+    for r in Default Dark; do
+      "$xc/Applications/Icon Composer.app/Contents/Executables/ictool" $tmp/AppIcon.icon --export-image --output-file $tmp/$r.png \
+        --platform macOS --rendition $r --width 206 --height 206 --scale 1 >/dev/null
+      sips -p 256 256 $tmp/$r.png --out docs/icon${${r:#Default}:+-dark}.png >/dev/null
+    done
+  else
+    echo "Note: Xcode not found at $xc; using iconutil fallback for AppIcon.icns."
+    mkdir -p $tmp/AppIcon.iconset
+    for sz in 16 32 128 256 512; do
+      sips -z $sz $sz $tmp/AppIcon.icon/Assets/key.png --out $tmp/AppIcon.iconset/icon_${sz}x${sz}.png >/dev/null
+      sips -z $((sz*2)) $((sz*2)) $tmp/AppIcon.icon/Assets/key.png --out $tmp/AppIcon.iconset/icon_${sz}x${sz}@2x.png >/dev/null
+    done
+    iconutil -c icns $tmp/AppIcon.iconset -o "$app/Contents/Resources/AppIcon.icns"
+  fi
 fi
 cp LICENSE THIRD-PARTY-LICENSES.md "$app/Contents/Resources/"   # Sparkle's MIT license travels with it
+[ -f skills/retyper/SKILL.md ] && cp skills/retyper/SKILL.md "$app/Contents/Resources/SKILL.md"
 
 cat > "$app/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>

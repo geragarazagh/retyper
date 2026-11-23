@@ -553,8 +553,10 @@ let undoBySwitchMargin: Float = 4.5
 /// (lower case); the window's Exceptions row edits it.
 struct Exceptions {
     static var file: URL {
+        let real = URL(fileURLWithPath: CommandLine.arguments[0]).resolvingSymlinksInPath()
+        let bundle = Bundle(url: real.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()) ?? .main
         let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent(Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String ?? "Retyper")
+            .appendingPathComponent(bundle.object(forInfoDictionaryKey: "CFBundleName") as? String ?? "Retyper")
         return dir.appendingPathComponent("Exceptions.txt")
     }
     private(set) var words: Set<String> = []
