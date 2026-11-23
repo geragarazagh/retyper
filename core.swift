@@ -553,7 +553,9 @@ let undoBySwitchMargin: Float = 4.5
 /// (lower case); the window's Exceptions row edits it.
 struct Exceptions {
     static var file: URL {
-        let real = URL(fileURLWithPath: CommandLine.arguments[0]).resolvingSymlinksInPath()
+        // executableURL, not argv[0]: run by name from PATH (the Homebrew symlink) argv[0] is the bare name, and the bundle
+        // three levels above it is the current folder's, not the app's (measured 2026-11-23: version 0, settings unread).
+        let real = (Bundle.main.executableURL ?? URL(fileURLWithPath: CommandLine.arguments[0])).resolvingSymlinksInPath()
         let bundle = Bundle(url: real.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()) ?? .main
         let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent(bundle.object(forInfoDictionaryKey: "CFBundleName") as? String ?? "Retyper")
