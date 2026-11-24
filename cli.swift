@@ -223,6 +223,9 @@ private func layoutKeys(_ word: String, in layout: Layout) -> [Key]? {
     guard args.isEmpty || json else { rtFail(usage) }
     let version = rtAppBundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
     let running = rtRunning()
+    // The grant of the terminal running this command, not Retyper's: macOS credits a child of a terminal to the terminal
+    // (its responsible process), and the running app has no control channel to ask. Said so in the name and the text, so an
+    // agent never reads "yes" as "the app can type" (2026-11-24: the key was called accessibility).
     let access = AXIsProcessTrusted()
     let layouts = Core.enabledLayoutIDs()
     let exc = Exceptions().list
@@ -230,7 +233,7 @@ private func layoutKeys(_ word: String, in layout: Layout) -> [Key]? {
         rtJSON([
             "version": version,
             "running": running,
-            "accessibility": access,
+            "terminalAccessibility": access,
             "layouts": layouts,
             "exceptionsCount": exc.count,
             "exceptionsFile": Exceptions.file.path,
@@ -238,7 +241,7 @@ private func layoutKeys(_ word: String, in layout: Layout) -> [Key]? {
     }
     print("version: \(version)")
     print("running: \(running ? "yes" : "no")")
-    print("accessibility: \(access ? "yes" : "no")")
+    print("terminalAccessibility: \(access ? "yes" : "no") (this terminal's grant, not Retyper's; Retyper's is in System Settings > Privacy & Security > Accessibility, on macOS 27 «Device Control and Data Access»)")
     print("layouts: \(layouts.joined(separator: ", "))")
     print("exceptions: \(exc.count) (\(Exceptions.file.path))")
     exit(0)
