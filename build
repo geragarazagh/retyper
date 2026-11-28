@@ -7,7 +7,7 @@
 set -e
 cd "${0:A:h}"
 # It changes per release, not per build.
-version=0.3 min=13.0 name=${NAME:-Retyper} id=${ID:-com.geragaraza.sourcekey}
+version=0.4 min=13.0 name=${NAME:-Retyper} id=${ID:-com.geragaraza.sourcekey}
 app=$name.app
 xc=${XCODE_CONTENTS:-/Applications/Xcode.app/Contents}
 has_xcode=0; [ -d "$xc/Developer" ] && [ -x "$xc/Applications/Icon Composer.app/Contents/Executables/ictool" ] && has_xcode=1
