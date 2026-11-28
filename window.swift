@@ -67,6 +67,9 @@ final class AppIconView: NSImageView {
     let loginSwitch = NSSwitch()
     var onShow: (() -> Void)?
     var onClose: (() -> Void)?
+    // The monitor's token is kept: thrown away, AppKit's observer is unreachable and `leaks` reports it (stress matrix
+    // 2026-11-27). The window lives as long as the app, so it is never removed.
+    private var keyMonitor: Any?
 
     init(name: String, github: String, extra: NSView? = nil) {
         self.name = name
@@ -78,7 +81,7 @@ final class AppIconView: NSImageView {
         super.init()
         build()
         _ = Updates.shared   // starts the daily check
-        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] e in
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] e in
             guard let self, e.window === self.panel else { return e }
             let f = e.modifierFlags.intersection([.command, .option, .control, .shift])
             if e.keyCode == 53 && f.isEmpty || e.charactersIgnoringModifiers == "w" && f == .command { self.panel.performClose(nil); return nil }
@@ -158,7 +161,7 @@ final class AppIconView: NSImageView {
     }
 
     func show() {
-        loginSwitch.state = login.status == .enabled ? .on : .off
+        refreshLogin()
         onShow?()
         if !panel.isVisible { panel.center() }
         panel.orderFrontRegardless()
@@ -168,7 +171,17 @@ final class AppIconView: NSImageView {
     }
 
     func windowWillClose(_ n: Notification) { onClose?() }
-    func windowDidBecomeKey(_ n: Notification) { loginSwitch.state = login.status == .enabled ? .on : .off; onShow?() }
+    func windowDidBecomeKey(_ n: Notification) { refreshLogin(); onShow?() }
+
+    /// `status` is a synchronous XPC call to smd: on the main thread it stalled the window 1.1 s (38 s under ASan) on a
+    /// test machine each time it became key (stress matrix 2026-11-27). Asked off the main thread, the switch set after.
+    func refreshLogin() {
+        let plist = "\(Bundle.main.bundleIdentifier ?? "").login.plist"   // the same agent as `login`, made where it is asked
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let on = SMAppService.agent(plistName: plist).status == .enabled
+            DispatchQueue.main.async { self?.loginSwitch.state = on ? .on : .off }
+        }
+    }
 
     @objc func openLink(_ b: NSButton) {
         if let s = b.toolTip, let u = URL(string: s) { NSWorkspace.shared.open(u) }

@@ -364,6 +364,9 @@ extension Core {
         var f: CFTypeRef?
         let el: AXUIElement? = AXUIElementCopyAttributeValue(appEl, kAXFocusedUIElementAttribute as CFString, &f) == .success && f != nil ? (f as! AXUIElement) : nil
         guard let el else { return .unknown }
+        // The timeout is per element: without it the focused element's calls here and in setSelection waited the
+        // system's 6 s on a busy app (stress matrix 2026-11-27).
+        AXUIElementSetMessagingTimeout(el, 0.5)
         // A list of files or rows (Finder) is no text: ⌘C there copies files, and typing their names back would jump
         // through the list by type-select (security pass before 0.1, left then; fixed 2026-11-13).
         var role: CFTypeRef?

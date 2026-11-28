@@ -271,7 +271,11 @@ let undoBySwitchMargin: Float = 4.5
         switch type {
         case .leftMouseDown, .rightMouseDown, .otherMouseDown:
             clearTaps()
-            if !Core.onMenu(event.location) { reset("click") }
+            // The window list is a WindowServer round trip: asked in the tap it held every click on the system while
+            // the server was busy (6 s on a test machine, stress matrix 2026-11-27). Asked right after the click passes;
+            // the main queue is drained before the next tap event, so a key typed after the click still finds the reset.
+            let p = event.location
+            DispatchQueue.main.async { [weak self] in if !Core.onMenu(p) { self?.reset("click") } }
             return pass
         case .keyDown:
             if recordKey(event) { return nil }
